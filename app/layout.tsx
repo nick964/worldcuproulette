@@ -52,7 +52,7 @@ export default function RootLayout({
               </Show>
             </div>
           </header>
-          <main className="flex-1">{children}</main>
+          <main className="flex-1 overflow-x-hidden">{children}</main>
         </body>
       </html>
     </ClerkProvider>

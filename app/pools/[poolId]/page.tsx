@@ -165,11 +165,13 @@ export default async function PoolPage({
       {pool.status === "locked" && (
         <section className="mt-6 space-y-6">
           {isMember ? (
-            <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <h2 className="font-semibold">Your draft</h2>
-              <p className="mt-1 text-sm text-zinc-500">
-                Spins remaining: <strong>{Math.max(mySpinsLeft, 0)}</strong>
-              </p>
+            <div>
+              <div className="text-center">
+                <h2 className="text-lg font-semibold">Your draft</h2>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Spins remaining: <strong>{Math.max(mySpinsLeft, 0)}</strong>
+                </p>
+              </div>
               <div className="mt-4">
                 <Wheel
                   key={`${unclaimedTeams.length}-${Math.max(mySpinsLeft, 0)}`}
