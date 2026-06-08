@@ -6,6 +6,7 @@ import { createClient } from "@/utils/supabase/server";
 import { getUserMap, displayName } from "@/lib/clerk";
 import { joinPool, leavePool, lockPool } from "@/lib/actions";
 import { flagUrl } from "@/lib/flags";
+import { Wheel } from "@/components/wheel";
 
 type Team = { id: string; name: string; code: string; wc_group: string };
 
@@ -57,6 +58,7 @@ export default async function PoolPage({
     picksByUser.set(p.user_id, arr);
   }
   const remainingCount = teamList.length - claimed.size;
+  const unclaimedTeams = teamList.filter((t) => !claimed.has(t.id));
 
   const userMap = await getUserMap(members.map((m) => m.user_id));
   const isOwner = pool.created_by === userId;
@@ -168,7 +170,13 @@ export default async function PoolPage({
               <p className="mt-1 text-sm text-zinc-500">
                 Spins remaining: <strong>{Math.max(mySpinsLeft, 0)}</strong>
               </p>
-              {/* Wheel component is wired in the next milestone */}
+              <div className="mt-4">
+                <Wheel
+                  poolId={pool.id}
+                  teams={unclaimedTeams}
+                  spinsLeft={Math.max(mySpinsLeft, 0)}
+                />
+              </div>
             </div>
           ) : (
             <p className="text-sm text-zinc-500">
