@@ -9,11 +9,19 @@ import { flagUrl } from "@/lib/flags";
 type Team = { id: string; name: string; code: string; wc_group: string };
 
 const ITEM_W = 120; // px, must match the rendered item width
-const EXTRA_LOOPS = 5; // full passes before landing, for drama
-const SPIN_VELOCITY = 30; // px per frame while free-spinning
-const DECEL_MS = 3500; // deceleration duration
+const SPIN_VELOCITY = 30; // px per frame while free-spinning (~1800 px/s @60fps)
+const SPIN_PPS = SPIN_VELOCITY * 60; // px per second
+const MIN_DECEL_DIST = 2200; // px the reel still travels after STOP, before landing
 
 type Phase = "idle" | "spinning" | "stopping" | "revealed";
+
+type Decel = {
+  from: number;
+  dist: number;
+  durMs: number;
+  start: number;
+  team: SpinResult;
+};
 
 export function Wheel({
   poolId,
@@ -29,6 +37,7 @@ export function Wheel({
   const stripRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef(0);
   const rafRef = useRef<number | null>(null);
+  const decelRef = useRef<Decel | null>(null);
 
   const [phase, setPhase] = useState<Phase>("idle");
   const phaseRef = useRef<Phase>("idle");
@@ -36,9 +45,13 @@ export function Wheel({
   const [error, setError] = useState<string | null>(null);
 
   const len = teams.length;
-  // Enough copies of the team list so the reel always covers the window plus the
-  // full deceleration distance (which lands within EXTRA_LOOPS+1 passes).
-  const repeats = Math.max(8, EXTRA_LOOPS + 3 + Math.ceil(25 / Math.max(len, 1)));
+  const loopW = len * ITEM_W;
+  // Enough copies so the reel always covers the window plus the full travel
+  // distance (current offset + MIN_DECEL_DIST + up to one extra loop to align).
+  const repeats = useMemo(() => {
+    const needPx = MIN_DECEL_DIST + 3 * loopW + 1200;
+    return Math.max(8, Math.ceil(needPx / Math.max(loopW, 1)) + 2);
+  }, [loopW]);
   const reel = useMemo(
     () => Array.from({ length: repeats }, () => teams).flat(),
     [teams, repeats],
@@ -55,75 +68,82 @@ export function Wheel({
     }
   };
 
-  // The parent remounts this component (via a key on teams/spinsLeft) after a
-  // pick commits, so state resets naturally — no reset effect needed here.
+  // Single continuous animation loop. While `decelRef` is null it free-spins at
+  // constant velocity (including the brief window where we're awaiting the
+  // server after STOP); once a target is set it eases out from the *current*
+  // speed onto the team, with zero velocity discontinuity.
+  const step = (now: number) => {
+    const decel = decelRef.current;
+    if (decel) {
+      const p = Math.min(1, (now - decel.start) / decel.durMs);
+      const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
+      offsetRef.current = decel.from + decel.dist * eased;
+      apply();
+      if (p >= 1) {
+        decelRef.current = null;
+        setResult(decel.team);
+        setPhaseBoth("revealed");
+        return; // stop the loop
+      }
+    } else {
+      offsetRef.current += SPIN_VELOCITY;
+      if (offsetRef.current >= loopW) offsetRef.current -= loopW;
+      apply();
+    }
+    rafRef.current = requestAnimationFrame(step);
+  };
+
   useEffect(() => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, []);
 
-  const freeSpin = () => {
-    const loopW = len * ITEM_W;
-    const frame = () => {
-      offsetRef.current += SPIN_VELOCITY;
-      if (offsetRef.current >= loopW) offsetRef.current -= loopW;
-      apply();
-      if (phaseRef.current === "spinning") {
-        rafRef.current = requestAnimationFrame(frame);
-      }
-    };
-    rafRef.current = requestAnimationFrame(frame);
-  };
-
   const startSpin = () => {
     if (len === 0 || spinsLeft <= 0) return;
     setError(null);
     setResult(null);
+    decelRef.current = null;
     setPhaseBoth("spinning");
-    freeSpin();
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(step);
   };
 
   const stop = async () => {
     if (phaseRef.current !== "spinning") return;
+    // Keep the reel spinning (the loop is still running) while we ask the
+    // server which team to land on — no hard stop.
     setPhaseBoth("stopping");
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
     let team: SpinResult;
     try {
       team = await spinForTeam(poolId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Spin failed. Try again.");
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
       setPhaseBoth("idle");
       return;
     }
 
+    // Compute a landing offset for the team that is at least MIN_DECEL_DIST
+    // ahead of where the reel is right now, aligned to a copy of that team.
     const window = containerRef.current?.clientWidth ?? 600;
     const idx = Math.max(
       0,
       teams.findIndex((t) => t.id === team.id),
     );
-    const targetAbsIndex = EXTRA_LOOPS * len + idx;
-    const targetOffset =
-      targetAbsIndex * ITEM_W + ITEM_W / 2 - window / 2;
+    const idxOffset = idx * ITEM_W + ITEM_W / 2 - window / 2;
+    const current = offsetRef.current;
+    const k = Math.ceil((current + MIN_DECEL_DIST - idxOffset) / loopW);
+    const target = idxOffset + k * loopW;
+    const dist = Math.max(target - current, MIN_DECEL_DIST);
 
-    const from = offsetRef.current;
-    const dist = targetOffset - from;
-    const startTime = performance.now();
+    // Duration chosen so easeOutCubic's initial velocity (3*dist/dur) equals the
+    // current free-spin velocity — the slowdown begins seamlessly.
+    const durMs = (3 * dist) / SPIN_PPS * 1000;
 
-    const tick = (now: number) => {
-      const p = Math.min(1, (now - startTime) / DECEL_MS);
-      const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
-      offsetRef.current = from + dist * eased;
-      apply();
-      if (p < 1) {
-        rafRef.current = requestAnimationFrame(tick);
-      } else {
-        setResult(team);
-        setPhaseBoth("revealed");
-      }
-    };
-    rafRef.current = requestAnimationFrame(tick);
+    decelRef.current = { from: current, dist, durMs, start: performance.now(), team };
+    // The loop is already running; it will pick up decelRef on the next frame.
   };
 
   const noSpins = spinsLeft <= 0;
@@ -199,9 +219,7 @@ export function Wheel({
                 alt={result.name}
                 className="h-6 w-auto rounded-sm"
               />
-              <span className="font-semibold">
-                You drew {result.name}!
-              </span>
+              <span className="font-semibold">You drew {result.name}!</span>
               <span className="text-xs text-zinc-500">
                 Group {result.wc_group}
               </span>
