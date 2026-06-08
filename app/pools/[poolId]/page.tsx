@@ -172,6 +172,7 @@ export default async function PoolPage({
               </p>
               <div className="mt-4">
                 <Wheel
+                  key={`${unclaimedTeams.length}-${Math.max(mySpinsLeft, 0)}`}
                   poolId={pool.id}
                   teams={unclaimedTeams}
                   spinsLeft={Math.max(mySpinsLeft, 0)}

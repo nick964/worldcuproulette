@@ -167,8 +167,10 @@ export async function spinForTeam(poolId: string): Promise<SpinResult> {
   if (!data) throw new Error("No team was assigned.");
 
   // rpc returning a composite row comes back as an object.
+  // NOTE: intentionally no revalidatePath here — that would auto-refresh the
+  // page and wipe the wheel's reveal. The Wheel calls router.refresh() itself
+  // once the user acknowledges the result.
   const team = data as SpinResult;
-  revalidatePath(`/pools/${poolId}`);
   return {
     id: team.id,
     name: team.name,

@@ -55,17 +55,8 @@ export function Wheel({
     }
   };
 
-  // Reset whenever the available teams or remaining spins change (after a pick
-  // is committed and the server data refreshes).
-  useEffect(() => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    offsetRef.current = 0;
-    apply();
-    setResult(null);
-    setError(null);
-    setPhaseBoth("idle");
-  }, [teams, spinsLeft]);
-
+  // The parent remounts this component (via a key on teams/spinsLeft) after a
+  // pick commits, so state resets naturally — no reset effect needed here.
   useEffect(() => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);

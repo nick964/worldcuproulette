@@ -62,12 +62,47 @@ infinite recursion.
 
 ---
 
-## Build progress
+## Build progress — all milestones complete
 - [x] Milestone 1 — DB: schema, RLS + helpers, RPCs (`lock_pool`,
       `assign_random_team`, `set_winning_team`), seed (48 teams), simulation test.
-- [ ] Milestone 2 — auth wiring + app shell
-- [ ] Milestone 3 — groups (create/list/invite/join)
-- [ ] Milestone 4 — pools (create/join/lock + allotment)
-- [ ] Milestone 5 — spin action + wheel
-- [ ] Milestone 6 — pool dashboard + winner flow
-- [ ] Milestone 7 — verify + polish
+- [x] Milestone 2 — auth wiring + app shell (home dashboard).
+- [x] Milestone 3 — groups: create / list / invite link + copy / join-by-link.
+- [x] Milestone 4 — pools: create / join / leave / owner lock + allotment preview.
+- [x] Milestone 5 — slot-machine wheel; server-authoritative spin.
+- [x] Milestone 6 — pool dashboard (standings) + owner winner control + winner banner.
+- [x] Milestone 7 — verify + polish (error/not-found/loading, lint, build).
+
+## Verification done in this build
+- `next build` — passes (all routes server-rendered on demand).
+- `npx tsc --noEmit` — clean.
+- `npx eslint .` — clean.
+
+## Verification that needs a live DB (you must run — I have no DB credentials here)
+- **Draft simulation:** `supabase/tests/draft_simulation.sql` in the SQL Editor.
+  Asserts a 7-member pool drafts all 48 teams, no duplicates, counts = allotments.
+- **Concurrency proof:** `node scripts/concurrent-spin.mjs` with `DATABASE_URL`
+  set to your Supabase Postgres connection string (Project Settings → Database).
+  Fires 48 spins across two members in parallel; asserts zero duplicate teams.
+  (`pg` was added as a devDependency for this script only.)
+
+## Routes
+- `/` — home: your groups + create/join forms (or sign-in when logged out).
+- `/groups/[groupId]` — invite link, members, pools, create pool.
+- `/join/[code]` — invite preview + join button.
+- `/pools/[poolId]` — open (membership + lock), locked (wheel + standings),
+  complete (winner banner + owner winner control + standings).
+
+## Wheel implementation notes
+- The STOP button calls `spinForTeam` (→ `assign_random_team` RPC) which picks the
+  team server-side; the reel then eases onto that team. `spinForTeam` deliberately
+  does NOT `revalidatePath` (that would auto-refresh and wipe the reveal) — the
+  wheel calls `router.refresh()` itself when the user clicks "Next spin"/"Finish",
+  and the parent remounts it via a `key` so state resets cleanly.
+- Edge case: if a concurrent pick removed the server-returned team from the local
+  unclaimed list (rare), the reel lands on index 0 but the reveal still shows the
+  correct server team. The pick itself is always correct.
+
+## Things you might want to do next (not required by the spec)
+- Supabase Realtime on `picks` for live standings updates (left as a nice-to-have).
+- A `profiles` table + Clerk webhook if Clerk API calls per render become a concern.
+- Live sports-API integration to auto-set the winning team (explicit stretch goal).
