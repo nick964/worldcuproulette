@@ -1,8 +1,12 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 
-// Add routes here that should require authentication. Everything else stays
-// public. Example: const isProtectedRoute = createRouteMatcher(['/dashboard(.*)'])
-const isProtectedRoute = createRouteMatcher([])
+// Routes that require authentication. The marketing home page ("/") stays
+// public; everything that touches a user's groups/pools/draft requires sign-in.
+const isProtectedRoute = createRouteMatcher([
+  '/groups(.*)',
+  '/pools(.*)',
+  '/join(.*)',
+])
 
 export default clerkMiddleware(async (auth, request) => {
   if (isProtectedRoute(request)) {
