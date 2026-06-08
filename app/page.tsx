@@ -2,7 +2,15 @@ import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { SignInButton } from "@clerk/nextjs";
 import { createClient } from "@/utils/supabase/server";
-import { createGroup, joinGroupByCode } from "@/lib/actions";
+import { createPool, joinPoolByCode } from "@/lib/actions";
+
+const STATUS_LABEL: Record<string, string> = {
+  open: "Open",
+  locked: "Drafting",
+  complete: "Complete",
+};
+
+type Pool = { id: string; name: string; status: string };
 
 export default async function Home() {
   const { userId } = await auth();
@@ -13,7 +21,7 @@ export default async function Home() {
         <div className="text-6xl">🎡⚽️</div>
         <h1 className="text-4xl font-bold tracking-tight">Spin the World Cup</h1>
         <p className="max-w-md text-lg text-zinc-600 dark:text-zinc-400">
-          Create a group, invite your friends, and draft all 48 nations with a
+          Create a pool, invite your friends, and draft all 48 nations with a
           slot-machine wheel. Hold the team that lifts the trophy and win the pool.
         </p>
         <SignInButton>
@@ -27,34 +35,34 @@ export default async function Home() {
 
   const supabase = createClient();
   const { data: memberships } = await supabase
-    .from("group_members")
-    .select("role, group:groups(id, name, invite_code)")
+    .from("pool_members")
+    .select("role, pool:pools(id, name, status)")
     .eq("user_id", userId)
     .order("joined_at", { ascending: false });
 
-  const groups = (memberships ?? [])
-    .map((m) => ({ role: m.role, ...(m.group as unknown as Group) }))
-    .filter((g) => g.id);
+  const pools = (memberships ?? [])
+    .map((m) => ({ role: m.role, ...(m.pool as unknown as Pool) }))
+    .filter((p) => p.id);
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-10">
-      <h1 className="text-2xl font-bold">Your groups</h1>
+      <h1 className="text-2xl font-bold">Your pools</h1>
 
-      {groups.length === 0 ? (
+      {pools.length === 0 ? (
         <p className="mt-3 text-zinc-600 dark:text-zinc-400">
-          You&apos;re not in any groups yet. Create one or join with an invite code.
+          You&apos;re not in any pools yet. Create one or join with an invite code.
         </p>
       ) : (
         <ul className="mt-4 grid gap-3">
-          {groups.map((g) => (
-            <li key={g.id}>
+          {pools.map((p) => (
+            <li key={p.id}>
               <Link
-                href={`/groups/${g.id}`}
+                href={`/pools/${p.id}`}
                 className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white p-4 transition hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900"
               >
-                <span className="font-medium">{g.name}</span>
-                <span className="text-xs uppercase tracking-wide text-zinc-500">
-                  {g.role}
+                <span className="font-medium">{p.name}</span>
+                <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                  {STATUS_LABEL[p.status] ?? p.status}
                 </span>
               </Link>
             </li>
@@ -64,10 +72,10 @@ export default async function Home() {
 
       <div className="mt-10 grid gap-6 sm:grid-cols-2">
         <form
-          action={createGroup}
+          action={createPool}
           className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
         >
-          <h2 className="font-semibold">Create a group</h2>
+          <h2 className="font-semibold">Create a pool</h2>
           <input
             name="name"
             required
@@ -80,10 +88,10 @@ export default async function Home() {
         </form>
 
         <form
-          action={joinGroupByCode}
+          action={joinPoolByCode}
           className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
         >
-          <h2 className="font-semibold">Join a group</h2>
+          <h2 className="font-semibold">Join a pool</h2>
           <input
             name="code"
             required
@@ -98,5 +106,3 @@ export default async function Home() {
     </div>
   );
 }
-
-type Group = { id: string; name: string; invite_code: string };

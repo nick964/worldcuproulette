@@ -4,9 +4,10 @@ import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@/utils/supabase/server";
 import { getUserMap, displayName } from "@/lib/clerk";
-import { joinPool, leavePool, lockPool, setWinningTeam } from "@/lib/actions";
+import { leavePool, lockPool, setWinningTeam } from "@/lib/actions";
 import { flagUrl } from "@/lib/flags";
 import { Wheel } from "@/components/wheel";
+import { InviteLink } from "@/components/invite-link";
 
 type Team = { id: string; name: string; code: string; wc_group: string };
 
@@ -27,7 +28,7 @@ export default async function PoolPage({
 
   const { data: pool } = await supabase
     .from("pools")
-    .select("id, name, status, group_id, created_by, winning_team_id")
+    .select("id, name, status, owner_id, invite_code, winning_team_id")
     .eq("id", poolId)
     .maybeSingle();
   if (!pool) notFound();
@@ -36,7 +37,7 @@ export default async function PoolPage({
     await Promise.all([
       supabase
         .from("pool_members")
-        .select("user_id, teams_allotted")
+        .select("user_id, role, teams_allotted")
         .eq("pool_id", poolId)
         .order("joined_at", { ascending: true }),
       supabase.from("picks").select("user_id, team_id").eq("pool_id", poolId),
@@ -61,7 +62,7 @@ export default async function PoolPage({
   const unclaimedTeams = teamList.filter((t) => !claimed.has(t.id));
 
   const userMap = await getUserMap(members.map((m) => m.user_id));
-  const isOwner = pool.created_by === userId;
+  const isOwner = pool.owner_id === userId;
   const myMembership = members.find((m) => m.user_id === userId);
   const isMember = Boolean(myMembership);
   const myUsed = userId ? (picksByUser.get(userId)?.length ?? 0) : 0;
@@ -73,11 +74,8 @@ export default async function PoolPage({
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
-      <Link
-        href={`/groups/${pool.group_id}`}
-        className="text-sm text-zinc-500 hover:underline"
-      >
-        ← Back to group
+      <Link href="/" className="text-sm text-zinc-500 hover:underline">
+        ← All pools
       </Link>
 
       <div className="mt-2 flex items-center justify-between gap-3">
@@ -87,9 +85,19 @@ export default async function PoolPage({
         </span>
       </div>
 
-      {/* OPEN: manage membership, then lock */}
+      {/* OPEN: invite, manage membership, then lock */}
       {pool.status === "open" && (
         <section className="mt-6 space-y-6">
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="text-sm font-semibold text-zinc-500">Invite link</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Share this so others can join before you lock the pool.
+            </p>
+            <div className="mt-3">
+              <InviteLink code={pool.invite_code} />
+            </div>
+          </div>
+
           <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
             <h2 className="font-semibold">Members ({M})</h2>
             <ul className="mt-3 flex flex-wrap gap-2">
@@ -99,36 +107,21 @@ export default async function PoolPage({
                   className="rounded-full border border-zinc-200 px-3 py-1 text-sm dark:border-zinc-800"
                 >
                   {displayName(userMap, m.user_id)}
-                  {m.user_id === pool.created_by && (
+                  {m.user_id === pool.owner_id && (
                     <span className="ml-1 text-xs text-zinc-400">(owner)</span>
                   )}
                 </li>
               ))}
             </ul>
 
-            <div className="mt-4 flex gap-2">
-              {!isMember && M < 48 && (
-                <form action={joinPool}>
-                  <input type="hidden" name="poolId" value={pool.id} />
-                  <button className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-zinc-900">
-                    Join pool
-                  </button>
-                </form>
-              )}
-              {!isMember && M >= 48 && (
-                <p className="text-sm text-amber-600">
-                  This pool is full (48 members max).
-                </p>
-              )}
-              {isMember && !isOwner && (
-                <form action={leavePool}>
-                  <input type="hidden" name="poolId" value={pool.id} />
-                  <button className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700">
-                    Leave pool
-                  </button>
-                </form>
-              )}
-            </div>
+            {isMember && !isOwner && (
+              <form action={leavePool} className="mt-4">
+                <input type="hidden" name="poolId" value={pool.id} />
+                <button className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700">
+                  Leave pool
+                </button>
+              </form>
+            )}
           </div>
 
           {isOwner && (
@@ -161,7 +154,7 @@ export default async function PoolPage({
         </section>
       )}
 
-      {/* LOCKED: draft area (wheel added next milestone) + standings */}
+      {/* LOCKED: the wheel + standings */}
       {pool.status === "locked" && (
         <section className="mt-6 space-y-6">
           {isMember ? (
@@ -191,7 +184,7 @@ export default async function PoolPage({
             members={members}
             picksByUser={picksByUser}
             userMap={userMap}
-            ownerId={pool.created_by}
+            ownerId={pool.owner_id}
             remainingCount={remainingCount}
           />
         </section>
@@ -225,7 +218,7 @@ export default async function PoolPage({
             members={members}
             picksByUser={picksByUser}
             userMap={userMap}
-            ownerId={pool.created_by}
+            ownerId={pool.owner_id}
             remainingCount={remainingCount}
           />
         </section>
@@ -260,7 +253,7 @@ function WinnerBanner({
         🏆 World Cup winner
       </p>
       <img
-        src={flagUrl(team.code, "w160")}
+        src={flagUrl(team.code, "w320")}
         alt={team.name}
         className="mx-auto mt-3 h-16 w-auto rounded shadow"
       />
@@ -347,7 +340,10 @@ function Standings({
         {members.map((m) => {
           const teams = picksByUser.get(m.user_id) ?? [];
           return (
-            <li key={m.user_id} className="border-t border-zinc-100 pt-3 dark:border-zinc-800 first:border-t-0 first:pt-0">
+            <li
+              key={m.user_id}
+              className="border-t border-zinc-100 pt-3 first:border-t-0 first:pt-0 dark:border-zinc-800"
+            >
               <div className="flex items-center justify-between">
                 <span className="font-medium">
                   {userMap.get(m.user_id)?.name ?? "Member"}

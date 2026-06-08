@@ -1,9 +1,14 @@
 # Spin the World Cup — Build Notes
 
-App for the 2026 FIFA World Cup (48 teams): create a **Group**, share an invite
-link, run **Pools** (drafts) inside it. When a pool locks, members spin a
-slot-machine wheel of unclaimed flags; the assigned team is chosen
-**server-side and atomically**. Whoever holds the World Cup winner wins the pool.
+App for the 2026 FIFA World Cup (48 teams): create a **Pool**, share its invite
+link, friends join. When the owner locks the pool, members spin a slot-machine
+wheel of unclaimed flags; the assigned team is chosen **server-side and
+atomically**. Whoever holds the World Cup winner wins the pool.
+
+> **Model note:** A **pool is the single social container** — it owns the invite
+> link, the members, the draft, and the winner. There is no separate "group"
+> concept (an earlier version had groups containing many pools; that was removed
+> as confusing — one pool = one invite = one draft).
 
 ## Stack
 - Next.js 16.2.7 (App Router) — **NOTE: this Next renamed `middleware.ts` → `proxy.ts`** and `params` is async (`await params`). Server mutations use `'use server'` Server Actions.
@@ -15,10 +20,14 @@ slot-machine wheel of unclaimed flags; the assigned team is chosen
 ## ⚠️ Manual steps you must do (the app won't work until these are done)
 
 1. **Apply the database.** In the Supabase dashboard → SQL Editor, run, in order:
+   0. `supabase/reset_dev.sql` — **only if you applied the old groups-based schema
+      before** (drops all app objects; DESTRUCTIVE — wipes pool data). Skip on a
+      fresh project.
    1. `supabase/migrations/20260607010000_schema.sql`
    2. `supabase/migrations/20260607010100_rls.sql`
    3. `supabase/migrations/20260607010200_functions.sql`
-   4. `supabase/seed.sql`  (asserts exactly 48 teams)
+   4. `supabase/migrations/20260607010300_join.sql`
+   5. `supabase/seed.sql`  (asserts exactly 48 teams)
    (Or `supabase db push` + `supabase db seed` if you wire up the CLI.)
 2. **Clerk ↔ Supabase native integration** — already configured during setup:
    - Clerk dashboard: Supabase integration enabled.
@@ -39,9 +48,11 @@ slot-machine wheel of unclaimed flags; the assigned team is chosen
 ---
 
 ## Decisions / assumptions made (defaults from the spec + ambiguities resolved)
-- **Pool "owner" = `pools.created_by`.** That user locks the pool and sets the
-  winning team. (Spec said "group/pool owner"; using the pool creator is the
-  least surprising and avoids ambiguity when a group has many pools.)
+- **Pool "owner" = `pools.owner_id`.** The creator; they lock the pool and set
+  the winning team.
+- **Joining is invite-only:** you join a pool via its invite link (`/join/[code]`),
+  which adds you as a member. You can only join while the pool is `open`; once
+  locked, membership is frozen. There is no public list of pools to browse.
 - **No `profiles` table.** Display names/avatars are fetched from Clerk on the
   server via `clerkClient` when rendering member lists. Avoids webhook infra.
 - **Allotment at lock:** `base = floor(48/M)`, and `48 mod M` randomly chosen
@@ -56,9 +67,10 @@ slot-machine wheel of unclaimed flags; the assigned team is chosen
   earlier Supabase smoke-test; not part of the product.
 
 ## RLS design note
-Helper functions `is_group_member`, `is_pool_member`, `pool_group_id` are
-`SECURITY DEFINER` so policies can reference the same table they protect without
-infinite recursion.
+The helper function `is_pool_member` is `SECURITY DEFINER` so policies can
+reference the same table they protect (`pool_members`) without infinite
+recursion. Invite preview/join go through `SECURITY DEFINER` functions
+(`pool_preview`, `join_pool`) because a not-yet-member can't see the pool via RLS.
 
 ---
 
@@ -66,8 +78,11 @@ infinite recursion.
 - [x] Milestone 1 — DB: schema, RLS + helpers, RPCs (`lock_pool`,
       `assign_random_team`, `set_winning_team`), seed (48 teams), simulation test.
 - [x] Milestone 2 — auth wiring + app shell (home dashboard).
-- [x] Milestone 3 — groups: create / list / invite link + copy / join-by-link.
+- [x] Milestone 3 — invite link + copy / join-by-link page.
 - [x] Milestone 4 — pools: create / join / leave / owner lock + allotment preview.
+- [x] **Refactor** — collapsed groups+pools into a single **pool** container
+      (pool now holds the invite link & members directly). Removed `groups` /
+      `group_members` tables, `/groups` route, and group server actions.
 - [x] Milestone 5 — slot-machine wheel; server-authoritative spin.
 - [x] Milestone 6 — pool dashboard (standings) + owner winner control + winner banner.
 - [x] Milestone 7 — verify + polish (error/not-found/loading, lint, build).
@@ -86,11 +101,10 @@ infinite recursion.
   (`pg` was added as a devDependency for this script only.)
 
 ## Routes
-- `/` — home: your groups + create/join forms (or sign-in when logged out).
-- `/groups/[groupId]` — invite link, members, pools, create pool.
-- `/join/[code]` — invite preview + join button.
-- `/pools/[poolId]` — open (membership + lock), locked (wheel + standings),
-  complete (winner banner + owner winner control + standings).
+- `/` — home: your pools + create-pool / join-by-code forms (or sign-in when logged out).
+- `/join/[code]` — pool preview + join button (blocked once the pool has started).
+- `/pools/[poolId]` — open (invite link + members + owner lock), locked (wheel +
+  standings), complete (winner banner + owner winner control + standings).
 
 ## Wheel implementation notes
 - The STOP button calls `spinForTeam` (→ `assign_random_team` RPC) which picks the

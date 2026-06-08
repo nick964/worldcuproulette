@@ -36,28 +36,17 @@ async function main() {
   const b = new Client({ connectionString: URL });
   await Promise.all([admin.connect(), a.connect(), b.connect()]);
 
-  let groupId;
+  let poolId;
   try {
-    const { rows } = await admin.query(
-      `insert into groups (name, owner_id, invite_code)
-       values ('Concurrency Test', $1, 'conc-' || substr(gen_random_uuid()::text,1,8))
+    const pool = await admin.query(
+      `insert into pools (name, owner_id, invite_code, status)
+       values ('Concurrency Pool', $1, 'conc-' || substr(gen_random_uuid()::text,1,8), 'open')
        returning id`,
       [USER_A],
     );
-    groupId = rows[0].id;
-
-    const pool = await admin.query(
-      `insert into pools (group_id, name, status, created_by)
-       values ($1, 'Concurrency Pool', 'open', $2) returning id`,
-      [groupId, USER_A],
-    );
-    const poolId = pool.rows[0].id;
+    poolId = pool.rows[0].id;
 
     for (const u of [USER_A, USER_B]) {
-      await admin.query(
-        `insert into group_members (group_id, user_id) values ($1, $2)`,
-        [groupId, u],
-      );
       await admin.query(
         `insert into pool_members (pool_id, user_id) values ($1, $2)`,
         [poolId, u],
@@ -95,8 +84,8 @@ async function main() {
       `PASS: 48 concurrent picks, ${distinct_teams} distinct teams, zero duplicates.`,
     );
   } finally {
-    if (groupId) {
-      await admin.query("delete from groups where id = $1", [groupId]);
+    if (poolId) {
+      await admin.query("delete from pools where id = $1", [poolId]);
     }
     await Promise.all([admin.end(), a.end(), b.end()]);
   }

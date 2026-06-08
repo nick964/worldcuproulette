@@ -18,106 +18,57 @@ function generateInviteCode(): string {
     .join("");
 }
 
-export async function createGroup(formData: FormData) {
+export async function createPool(formData: FormData) {
   const userId = await requireUser();
   const name = String(formData.get("name") ?? "").trim();
-  if (!name) throw new Error("Group name is required.");
+  if (!name) throw new Error("Pool name is required.");
 
   const supabase = createClient();
   const invite_code = generateInviteCode();
 
-  const { data: group, error } = await supabase
-    .from("groups")
+  const { data: pool, error } = await supabase
+    .from("pools")
     .insert({ name, owner_id: userId, invite_code })
     .select("id")
     .single();
   if (error) throw new Error(error.message);
 
+  // Creator joins their own pool as owner.
   const { error: memberErr } = await supabase
-    .from("group_members")
-    .insert({ group_id: group.id, user_id: userId, role: "owner" });
+    .from("pool_members")
+    .insert({ pool_id: pool.id, user_id: userId, role: "owner" });
   if (memberErr) throw new Error(memberErr.message);
 
   revalidatePath("/");
-  redirect(`/groups/${group.id}`);
+  redirect(`/pools/${pool.id}`);
 }
 
-export async function joinGroupByCode(formData: FormData) {
+export async function joinPoolByCode(formData: FormData) {
   await requireUser();
   const code = String(formData.get("code") ?? "").trim().toLowerCase();
   if (!code) throw new Error("Invite code is required.");
 
   const supabase = createClient();
-  const { data: groupId, error } = await supabase.rpc("join_group", {
+  const { data: poolId, error } = await supabase.rpc("join_pool", {
     p_code: code,
   });
   if (error) throw new Error(error.message);
-  if (!groupId) throw new Error("That invite code is not valid.");
+  if (!poolId) throw new Error("That invite code is not valid.");
 
   revalidatePath("/");
-  redirect(`/groups/${groupId}`);
+  redirect(`/pools/${poolId}`);
 }
 
-// Used by the /join/[code] page button.
-export async function joinGroup(code: string) {
+// Used by the /join/[code] page button (bound to the code).
+export async function joinPool(code: string) {
   await requireUser();
   const supabase = createClient();
-  const { data: groupId, error } = await supabase.rpc("join_group", {
+  const { data: poolId, error } = await supabase.rpc("join_pool", {
     p_code: code,
   });
   if (error) throw new Error(error.message);
-  if (!groupId) throw new Error("That invite code is not valid.");
-  redirect(`/groups/${groupId}`);
-}
-
-export async function createPool(formData: FormData) {
-  const userId = await requireUser();
-  const groupId = String(formData.get("groupId") ?? "");
-  const name = String(formData.get("name") ?? "").trim();
-  if (!groupId) throw new Error("Missing group.");
-  if (!name) throw new Error("Pool name is required.");
-
-  const supabase = createClient();
-  const { data: pool, error } = await supabase
-    .from("pools")
-    .insert({ group_id: groupId, name, created_by: userId })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
-
-  // Creator automatically joins their own pool.
-  const { error: memberErr } = await supabase
-    .from("pool_members")
-    .insert({ pool_id: pool.id, user_id: userId });
-  if (memberErr) throw new Error(memberErr.message);
-
-  revalidatePath(`/groups/${groupId}`);
-  redirect(`/pools/${pool.id}`);
-}
-
-export async function joinPool(formData: FormData) {
-  const userId = await requireUser();
-  const poolId = String(formData.get("poolId") ?? "");
-  if (!poolId) throw new Error("Missing pool.");
-
-  const supabase = createClient();
-
-  // Enforce the 48-member cap before joining.
-  const { count, error: countErr } = await supabase
-    .from("pool_members")
-    .select("user_id", { count: "exact", head: true })
-    .eq("pool_id", poolId);
-  if (countErr) throw new Error(countErr.message);
-  if ((count ?? 0) >= 48) {
-    throw new Error("This pool is full (48 members max).");
-  }
-
-  const { error } = await supabase
-    .from("pool_members")
-    .insert({ pool_id: poolId, user_id: userId });
-  if (error) throw new Error(error.message);
-
-  revalidatePath(`/pools/${poolId}`);
+  if (!poolId) throw new Error("That invite code is not valid.");
+  redirect(`/pools/${poolId}`);
 }
 
 export async function leavePool(formData: FormData) {
@@ -156,7 +107,8 @@ export type SpinResult = {
 };
 
 // Server-authoritative spin: the team is chosen atomically here; the wheel only
-// animates toward it.
+// animates toward it. No revalidatePath — that would auto-refresh and wipe the
+// wheel's reveal; the Wheel calls router.refresh() itself.
 export async function spinForTeam(poolId: string): Promise<SpinResult> {
   await requireUser();
   const supabase = createClient();
@@ -166,10 +118,6 @@ export async function spinForTeam(poolId: string): Promise<SpinResult> {
   if (error) throw new Error(error.message);
   if (!data) throw new Error("No team was assigned.");
 
-  // rpc returning a composite row comes back as an object.
-  // NOTE: intentionally no revalidatePath here — that would auto-refresh the
-  // page and wipe the wheel's reveal. The Wheel calls router.refresh() itself
-  // once the user acknowledges the result.
   const team = data as SpinResult;
   return {
     id: team.id,

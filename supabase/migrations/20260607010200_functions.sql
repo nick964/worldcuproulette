@@ -1,10 +1,9 @@
--- Server-authoritative game logic. All SECURITY DEFINER so they run with full
--- privileges after performing their own authorization checks against
--- current_clerk_id(). Call these only from server actions / route handlers.
+-- Server-authoritative game logic. SECURITY DEFINER; each performs its own
+-- authorization against current_clerk_id(). Call only from server actions.
 
 -- Lock a pool: freeze membership and distribute all 48 team slots across the
--- current members. base = floor(48/M); the remaining (48 mod M) extra slots go
--- to randomly chosen members (transparent, slightly unequal odds).
+-- members. base = floor(48/M); the remaining (48 mod M) extra slots go to
+-- randomly chosen members.
 create or replace function lock_pool(p_pool_id uuid)
 returns void
 language plpgsql
@@ -12,21 +11,19 @@ security definer
 set search_path = public
 as $$
 declare
-  v_caller   text := current_clerk_id();
-  v_status   text;
-  v_owner    text;
-  v_count    int;
-  v_base     int;
-  v_rem      int;
-  v_extra    text[];
+  v_caller text := current_clerk_id();
+  v_status text;
+  v_owner  text;
+  v_count  int;
+  v_base   int;
+  v_rem    int;
+  v_extra  text[];
 begin
   if v_caller is null then
     raise exception 'Not authenticated';
   end if;
 
-  select status, created_by into v_status, v_owner
-  from pools where id = p_pool_id;
-
+  select status, owner_id into v_status, v_owner from pools where id = p_pool_id;
   if v_owner is null then
     raise exception 'Pool not found';
   end if;
@@ -45,10 +42,9 @@ begin
     raise exception 'Pool has more than 48 members; cannot distribute 48 teams';
   end if;
 
-  v_base := 48 / v_count;          -- integer division (floor)
+  v_base := 48 / v_count;
   v_rem  := 48 % v_count;
 
-  -- randomly choose v_rem members to receive one extra team
   select array(
     select user_id from pool_members
     where pool_id = p_pool_id
@@ -65,8 +61,6 @@ end;
 $$;
 
 -- Atomically assign one random unclaimed team to the caller in a locked pool.
--- The visual wheel must animate toward the team THIS returns; the landing
--- position never determines the team.
 create or replace function assign_random_team(p_pool_id uuid)
 returns teams
 language plpgsql
@@ -109,7 +103,6 @@ begin
     raise exception 'No spins remaining';
   end if;
 
-  -- Retry loop: a concurrent spin may grab the team we picked (unique_violation).
   loop
     v_attempts := v_attempts + 1;
 
@@ -126,16 +119,14 @@ begin
     begin
       insert into picks (pool_id, user_id, team_id)
       values (p_pool_id, v_caller, v_team.id);
-      exit;  -- success
+      exit;
     exception when unique_violation then
       if v_attempts >= 10 then
         raise exception 'Could not assign a team after % attempts', v_attempts;
       end if;
-      -- otherwise loop and try another team
     end;
   end loop;
 
-  -- Mark complete once all 48 teams are claimed.
   select count(*) into v_total from picks where pool_id = p_pool_id;
   if v_total >= 48 then
     update pools set status = 'complete' where id = p_pool_id;
@@ -160,7 +151,7 @@ begin
     raise exception 'Not authenticated';
   end if;
 
-  select created_by into v_owner from pools where id = p_pool_id;
+  select owner_id into v_owner from pools where id = p_pool_id;
   if v_owner is null then
     raise exception 'Pool not found';
   end if;
@@ -175,11 +166,8 @@ begin
 end;
 $$;
 
--- Allow signed-in users to execute the RPCs.
-grant execute on function lock_pool(uuid)            to authenticated;
-grant execute on function assign_random_team(uuid)   to authenticated;
+grant execute on function lock_pool(uuid)              to authenticated;
+grant execute on function assign_random_team(uuid)     to authenticated;
 grant execute on function set_winning_team(uuid, uuid) to authenticated;
-grant execute on function current_clerk_id()         to authenticated, anon;
-grant execute on function is_group_member(uuid)      to authenticated;
-grant execute on function is_pool_member(uuid)       to authenticated;
-grant execute on function pool_group_id(uuid)        to authenticated;
+grant execute on function current_clerk_id()           to authenticated, anon;
+grant execute on function is_pool_member(uuid)         to authenticated;

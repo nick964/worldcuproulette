@@ -1,4 +1,6 @@
--- "Spin the World Cup" — core schema
+-- "Spin the World Cup" — schema.
+-- A POOL is the social container: it has an invite link, members, one draft,
+-- and (after the final) a winning team. There is no separate "group" concept.
 -- All user_id columns hold the Clerk user id (text), matched against auth.jwt()->>'sub'.
 
 -- The 48 World Cup teams (reference data, seeded separately)
@@ -11,39 +13,23 @@ create table if not exists teams (
   created_at    timestamptz default now()
 );
 
--- Social container with invite link
-create table if not exists groups (
-  id          uuid primary key default gen_random_uuid(),
-  name        text not null,
-  owner_id    text not null,                 -- clerk user id
-  invite_code text not null unique,          -- short slug for the join link
-  created_at  timestamptz default now()
-);
-
-create table if not exists group_members (
-  group_id  uuid references groups(id) on delete cascade,
-  user_id   text not null,
-  role      text not null default 'member',  -- 'owner' | 'member'
-  joined_at timestamptz default now(),
-  primary key (group_id, user_id)
-);
-
--- A single draft instance
+-- A pool: invite link + a single draft instance.
 create table if not exists pools (
   id              uuid primary key default gen_random_uuid(),
-  group_id        uuid references groups(id) on delete cascade,
   name            text not null,
+  owner_id        text not null,                -- clerk user id of the creator
+  invite_code     text not null unique,         -- short slug for the join link
   status          text not null default 'open'
     check (status in ('open','locked','complete')),
-  created_by      text not null,
-  winning_team_id uuid references teams(id),  -- set by owner after the final
+  winning_team_id uuid references teams(id),    -- set by owner after the final
   created_at      timestamptz default now()
 );
 
 create table if not exists pool_members (
   pool_id        uuid references pools(id) on delete cascade,
   user_id        text not null,
-  teams_allotted int not null default 0,      -- computed at lock time
+  role           text not null default 'member',  -- 'owner' | 'member'
+  teams_allotted int not null default 0,          -- computed at lock time
   joined_at      timestamptz default now(),
   primary key (pool_id, user_id)
 );
@@ -55,10 +41,8 @@ create table if not exists picks (
   user_id    text not null,
   team_id    uuid references teams(id),
   created_at timestamptz default now(),
-  unique (pool_id, team_id)                    -- THE integrity rule: no team twice per pool
+  unique (pool_id, team_id)                        -- no team twice per pool
 );
 
 create index if not exists picks_pool_user_idx on picks (pool_id, user_id);
-create index if not exists group_members_user_idx on group_members (user_id);
 create index if not exists pool_members_user_idx on pool_members (user_id);
-create index if not exists pools_group_idx on pools (group_id);

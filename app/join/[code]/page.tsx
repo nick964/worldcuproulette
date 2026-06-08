@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/server";
-import { joinGroup } from "@/lib/actions";
+import { joinPool } from "@/lib/actions";
 
 export default async function JoinPage({
   params,
@@ -10,11 +10,11 @@ export default async function JoinPage({
   const { code } = await params;
   const supabase = createClient();
 
-  const { data: previews } = await supabase.rpc("group_preview", {
+  const { data: previews } = await supabase.rpc("pool_preview", {
     p_code: code,
   });
   const preview = (previews ?? [])[0] as
-    | { id: string; name: string; member_count: number }
+    | { id: string; name: string; status: string; member_count: number }
     | undefined;
 
   if (!preview) {
@@ -31,7 +31,8 @@ export default async function JoinPage({
     );
   }
 
-  const joinThisGroup = joinGroup.bind(null, code);
+  const open = preview.status === "open";
+  const joinThisPool = joinPool.bind(null, code);
 
   return (
     <div className="mx-auto max-w-md px-6 py-24 text-center">
@@ -41,11 +42,23 @@ export default async function JoinPage({
         {preview.member_count}{" "}
         {Number(preview.member_count) === 1 ? "member" : "members"} so far.
       </p>
-      <form action={joinThisGroup} className="mt-8">
-        <button className="rounded-full bg-zinc-900 px-6 py-3 font-medium text-white dark:bg-white dark:text-zinc-900">
-          Join group
-        </button>
-      </form>
+
+      {open ? (
+        <form action={joinThisPool} className="mt-8">
+          <button className="rounded-full bg-zinc-900 px-6 py-3 font-medium text-white dark:bg-white dark:text-zinc-900">
+            Join pool
+          </button>
+        </form>
+      ) : (
+        <div className="mt-8">
+          <p className="text-amber-600">
+            This pool has already started — new members can&apos;t join.
+          </p>
+          <Link href="/" className="mt-4 inline-block text-sm hover:underline">
+            ← Back home
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
