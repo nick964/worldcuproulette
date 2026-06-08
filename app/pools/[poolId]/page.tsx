@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@/utils/supabase/server";
 import { getUserMap, displayName } from "@/lib/clerk";
-import { joinPool, leavePool, lockPool } from "@/lib/actions";
+import { joinPool, leavePool, lockPool, setWinningTeam } from "@/lib/actions";
 import { flagUrl } from "@/lib/flags";
 import { Wheel } from "@/components/wheel";
 
@@ -210,6 +210,14 @@ export default async function PoolPage({
             </p>
           )}
 
+          {isOwner && (
+            <WinnerSetter
+              poolId={pool.id}
+              teams={teamList}
+              current={pool.winning_team_id}
+            />
+          )}
+
           <Standings
             members={members}
             picksByUser={picksByUser}
@@ -260,6 +268,54 @@ function WinnerBanner({
         — they win the pool!
       </p>
     </div>
+  );
+}
+
+function WinnerSetter({
+  poolId,
+  teams,
+  current,
+}: {
+  poolId: string;
+  teams: Team[];
+  current: string | null;
+}) {
+  const sorted = [...teams].sort(
+    (a, b) => a.wc_group.localeCompare(b.wc_group) || a.name.localeCompare(b.name),
+  );
+  return (
+    <form
+      action={setWinningTeam}
+      className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      <h2 className="font-semibold">
+        {current ? "Change winning team" : "Set the winning team"}
+      </h2>
+      <p className="mt-1 text-sm text-zinc-500">
+        Owner only — choose the nation that won the World Cup.
+      </p>
+      <input type="hidden" name="poolId" value={poolId} />
+      <div className="mt-3 flex gap-2">
+        <select
+          name="teamId"
+          required
+          defaultValue={current ?? ""}
+          className="flex-1 rounded-md border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
+        >
+          <option value="" disabled>
+            Select a team…
+          </option>
+          {sorted.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.wc_group} · {t.name}
+            </option>
+          ))}
+        </select>
+        <button className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white">
+          Save winner
+        </button>
+      </div>
+    </form>
   );
 }
 
