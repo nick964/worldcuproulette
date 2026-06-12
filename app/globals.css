@@ -118,3 +118,36 @@ body {
     transform: translateY(-50%);
   }
 }
+
+/* Horizontal flag marquee (pool waiting room): strip rendered twice and
+   scrolled by half its width for a seamless loop. */
+.animate-flag-marquee {
+  animation: flag-marquee 60s linear infinite;
+}
+
+.animate-flag-marquee-reverse {
+  animation: flag-marquee 75s linear infinite reverse;
+}
+
+.animate-flag-marquee:hover,
+.animate-flag-marquee-reverse:hover {
+  animation-play-state: paused;
+}
+
+@keyframes flag-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-flag-marquee,
+  .animate-flag-marquee-reverse,
+  .animate-flag-reel,
+  .animate-spin-slow {
+    animation: none;
+  }
+}

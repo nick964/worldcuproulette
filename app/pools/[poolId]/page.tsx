@@ -130,6 +130,17 @@ export default async function PoolPage({
         </div>
       )}
 
+      {/* OPEN: waiting room for non-owner members */}
+      {pool.status === "open" && isMember && !isOwner && (
+        <WaitingRoom
+          ownerName={displayName(userMap, pool.owner_id)}
+          memberCount={M}
+          base={base}
+          rem={rem}
+          teams={teamList}
+        />
+      )}
+
       {/* OPEN: invite, manage membership, then lock */}
       {pool.status === "open" && (
         <section className="mt-8 grid gap-5 lg:grid-cols-3">
@@ -730,6 +741,101 @@ function PoolBody({
           </div>
         </div>
       </aside>
+    </div>
+  );
+}
+
+// Pre-lock explainer for members who aren't the owner: what's happening now,
+// how many spins they'll get, and a flag marquee to keep the hype up.
+function WaitingRoom({
+  ownerName,
+  memberCount,
+  base,
+  rem,
+  teams,
+}: {
+  ownerName: string;
+  memberCount: number;
+  base: number;
+  rem: number;
+  teams: Team[];
+}) {
+  const spinsLabel = rem === 0 ? `${base}` : `${base}–${base + 1}`;
+  return (
+    <section className="glass-card mt-8 overflow-hidden rounded-xl">
+      <div className="p-6">
+        <div className="flex items-center gap-2 text-primary">
+          <span className="live-dot" />
+          <span className="text-[10px] font-bold uppercase tracking-widest">
+            Pool open — squad still assembling
+          </span>
+        </div>
+        <h2 className="mt-2 font-display text-2xl font-semibold uppercase italic">
+          You&apos;re in! Now we wait.
+        </h2>
+        <p className="mt-2 max-w-2xl text-sm text-on-surface-variant">
+          This pool is still accepting players — anyone with the invite link
+          can join until <strong className="text-on-surface">{ownerName}</strong>{" "}
+          locks it. At lock, all 48 nations are dealt out at random, and the
+          spinning starts.
+        </p>
+        <div className="mt-4 inline-flex items-center gap-3 rounded-lg border border-secondary-fixed/30 bg-secondary-fixed/10 px-4 py-3">
+          <span className="text-2xl">🎡</span>
+          <p className="text-sm">
+            With <strong>{memberCount}</strong> player
+            {memberCount === 1 ? "" : "s"} so far, you&apos;ll get{" "}
+            <strong className="font-display text-lg text-secondary-fixed">
+              {spinsLabel} spins
+            </strong>{" "}
+            to draw your nations
+            {rem !== 0 && (
+              <span className="text-on-surface-variant">
+                {" "}
+                ({rem} lucky player{rem === 1 ? "" : "s"} get an extra)
+              </span>
+            )}
+            .
+          </p>
+        </div>
+      </div>
+
+      {/* All 48 nations drifting by — one of these is yours */}
+      <div className="space-y-2 border-t border-white/5 bg-surface-container-lowest/50 py-4">
+        <FlagMarqueeRow teams={teams} reverse={false} />
+        <FlagMarqueeRow teams={[...teams].reverse()} reverse />
+        <p className="px-6 pt-1 text-center text-[10px] uppercase tracking-[0.2em] text-on-surface-variant">
+          Your future nations are in here somewhere…
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function FlagMarqueeRow({
+  teams,
+  reverse,
+}: {
+  teams: Team[];
+  reverse: boolean;
+}) {
+  return (
+    <div className="overflow-hidden">
+      <div
+        className={`flex w-max gap-2 ${
+          reverse ? "animate-flag-marquee-reverse" : "animate-flag-marquee"
+        }`}
+      >
+        {[...teams, ...teams].map((t, i) => (
+          <img
+            key={`${t.id}-${i}`}
+            src={flagUrl(t.code, "w160")}
+            alt={t.name}
+            title={`${t.name} · Group ${t.wc_group}`}
+            className="h-10 w-auto rounded shadow-md"
+            draggable={false}
+          />
+        ))}
+      </div>
     </div>
   );
 }
