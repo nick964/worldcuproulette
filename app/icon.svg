@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- World Cup Roulette favicon: roulette ring + golden ball -->
+  <circle cx="32" cy="32" r="31" fill="#10150e"/>
+  <circle cx="32" cy="32" r="24" fill="none" stroke="#82db6f" stroke-width="6" stroke-dasharray="9.4 9.4"/>
+  <circle cx="32" cy="32" r="12" fill="#ffe16d"/>
+  <path d="M32 24.5l6.7 4.9-2.6 7.9h-8.2l-2.6-7.9z" fill="#10150e"/>
+</svg>

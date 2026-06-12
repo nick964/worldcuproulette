@@ -21,10 +21,30 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
+const SITE_URL = "https://worldcuproulette.com";
+const DESCRIPTION =
+  "Spin the wheel, draft your World Cup nations, and win the pool when your team lifts the trophy. The random-team World Cup 2026 pool — no skill, pure luck.";
+
 export const metadata: Metadata = {
-  title: "World Cup Roulette",
-  description:
-    "Spin the wheel, draft your World Cup nations, and win the pool when your team lifts the trophy.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "World Cup Roulette",
+    template: "%s · World Cup Roulette",
+  },
+  description: DESCRIPTION,
+  applicationName: "World Cup Roulette",
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: "World Cup Roulette",
+    title: "World Cup Roulette — Win the Cup by Luck",
+    description: DESCRIPTION,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "World Cup Roulette — Win the Cup by Luck",
+    description: DESCRIPTION,
+  },
 };
 
 export default function RootLayout({
