@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { createClient } from "@/utils/supabase/server";
-import { joinPoolByCode } from "@/lib/actions";
+import { joinPoolByCode, updateDisplayName } from "@/lib/actions";
 import { StatusChip } from "@/components/status-chip";
 import { SubmitButton } from "@/components/submit-button";
 
@@ -11,6 +11,11 @@ type Pool = { id: string; name: string; status: string };
 // landing page lives at "/".
 export default async function PoolsPage() {
   const { userId } = await auth();
+  const user = await currentUser();
+  const hasName = Boolean(user?.firstName || user?.lastName);
+  const currentName = [user?.firstName, user?.lastName]
+    .filter(Boolean)
+    .join(" ");
 
   const supabase = createClient();
   const { data: memberships } = await supabase
@@ -42,6 +47,67 @@ export default async function PoolsPage() {
           + Create Pool
         </Link>
       </div>
+
+      {hasName && (
+        <details className="mt-4">
+          <summary className="cursor-pointer list-none text-xs uppercase tracking-widest text-on-surface-variant transition-colors hover:text-primary">
+            Playing as{" "}
+            <span className="font-bold text-on-surface">{currentName}</span>
+            {" · "}
+            <span className="underline decoration-dotted underline-offset-2">
+              edit display name
+            </span>
+          </summary>
+          <form
+            action={updateDisplayName}
+            className="glass-card mt-3 flex max-w-md gap-2 rounded-xl p-4"
+          >
+            <input
+              name="name"
+              required
+              maxLength={60}
+              defaultValue={currentName}
+              className="w-full min-w-0 flex-1 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm outline-none transition-colors focus:border-primary"
+            />
+            <SubmitButton
+              pendingLabel="Saving…"
+              className="shrink-0 rounded-lg bg-primary px-4 py-2.5 text-xs font-bold uppercase tracking-widest text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              Update
+            </SubmitButton>
+          </form>
+        </details>
+      )}
+
+      {!hasName && (
+        <form
+          action={updateDisplayName}
+          className="glass-card mt-6 rounded-xl border-secondary-fixed/30 p-6"
+        >
+          <h2 className="font-display text-lg font-semibold uppercase italic text-secondary-fixed">
+            👋 Pick a display name
+          </h2>
+          <p className="mt-1 text-sm text-on-surface-variant">
+            Right now your pools show your email address. Set a name so your
+            rivals know who&apos;s beating them.
+          </p>
+          <div className="mt-4 flex gap-2">
+            <input
+              name="name"
+              required
+              maxLength={60}
+              placeholder="e.g. Nick R"
+              className="w-full min-w-0 flex-1 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-outline focus:border-primary"
+            />
+            <SubmitButton
+              pendingLabel="Saving…"
+              className="shrink-0 rounded-lg bg-secondary-container px-5 py-2.5 text-xs font-bold uppercase tracking-widest text-on-secondary-container transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              Save name
+            </SubmitButton>
+          </div>
+        </form>
+      )}
 
       {pools.length === 0 ? (
         <div className="glass-card mt-6 rounded-xl p-8 text-center">

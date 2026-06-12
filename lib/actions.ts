@@ -1,12 +1,13 @@
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { getUserEmails } from "@/lib/clerk";
-import { sendPoolLockedEmails } from "@/lib/email";
+import { sendPoolLockedEmails, sendMemberKickedEmail } from "@/lib/email";
+import { containsProfanity } from "@/lib/profanity";
 
 async function requireUser(): Promise<string> {
   const { userId } = await auth();
@@ -27,6 +28,11 @@ export async function createPool(formData: FormData) {
   if (!name) throw new Error("Pool name is required.");
   // Free-text house rules (entry fee, payout, …); optional.
   const notes = String(formData.get("notes") ?? "").trim().slice(0, 500);
+  if (containsProfanity(name) || containsProfanity(notes)) {
+    throw new Error(
+      "Pool names and notes have to stay family-friendly — try different wording.",
+    );
+  }
   // Soft player target ("4 of 10 spots taken") — display-only, not enforced.
   const targetRaw = String(formData.get("target_size") ?? "").trim();
   let target_size: number | null = null;
@@ -59,6 +65,29 @@ export async function createPool(formData: FormData) {
 
   revalidatePath("/pools");
   redirect(`/pools/${pool.id}`);
+}
+
+// Set the user's display name in Clerk (first word → firstName, rest →
+// lastName). For email sign-ups that never collected a name, so member lists
+// don't fall back to raw email addresses.
+export async function updateDisplayName(formData: FormData) {
+  const userId = await requireUser();
+  const name = String(formData.get("name") ?? "").trim().slice(0, 60);
+  if (!name) throw new Error("Display name is required.");
+  if (containsProfanity(name)) {
+    throw new Error(
+      "That name won't fly here — keep it family-friendly and try again.",
+    );
+  }
+
+  const [firstName, ...rest] = name.split(/\s+/);
+  const client = await clerkClient();
+  await client.users.updateUser(userId, {
+    firstName,
+    lastName: rest.join(" "),
+  });
+
+  revalidatePath("/pools");
 }
 
 export async function joinPoolByCode(formData: FormData) {
@@ -127,6 +156,61 @@ export async function deletePool(formData: FormData) {
 
   revalidatePath("/pools");
   redirect("/pools");
+}
+
+// Owner removes a member from an open pool; they get an email with the
+// owner's (optional) reason. Email problems never block the removal.
+export async function kickMember(formData: FormData) {
+  await requireUser();
+  const poolId = String(formData.get("poolId") ?? "");
+  const userId = String(formData.get("userId") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim().slice(0, 300);
+  if (!poolId || !userId) throw new Error("Missing pool or member.");
+
+  const supabase = createClient();
+  const { error } = await supabase.rpc("kick_member", {
+    p_pool_id: poolId,
+    p_user_id: userId,
+  });
+  if (error) throw new Error(error.message);
+
+  try {
+    const [{ data: pool }, emailMap] = await Promise.all([
+      supabase.from("pools").select("name").eq("id", poolId).single(),
+      getUserEmails([userId]),
+    ]);
+    const u = emailMap.get(userId);
+    if (pool && u?.email) {
+      await sendMemberKickedEmail({
+        email: u.email,
+        name: u.name,
+        poolName: pool.name,
+        reason,
+      });
+    }
+  } catch (e) {
+    console.error("[email] kicked notification failed:", e);
+  }
+
+  revalidatePath(`/pools/${poolId}`);
+}
+
+// Owner fills all of a slow member's remaining picks at random (one atomic
+// RPC). For drafts dragging on because someone won't spin.
+export async function autoDraftMember(formData: FormData) {
+  await requireUser();
+  const poolId = String(formData.get("poolId") ?? "");
+  const userId = String(formData.get("userId") ?? "");
+  if (!poolId || !userId) throw new Error("Missing pool or member.");
+
+  const supabase = createClient();
+  const { error } = await supabase.rpc("auto_draft_member", {
+    p_pool_id: poolId,
+    p_user_id: userId,
+  });
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/pools/${poolId}`);
 }
 
 export async function lockPool(formData: FormData) {

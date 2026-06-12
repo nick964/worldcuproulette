@@ -15,6 +15,10 @@ import { winChanceLabel } from "@/lib/odds";
 import { Wheel } from "@/components/wheel";
 import { InviteLink } from "@/components/invite-link";
 import { DeletePoolButton } from "@/components/delete-pool";
+import {
+  KickMemberButton,
+  AutoDraftButton,
+} from "@/components/admin-member-actions";
 import { StatusChip } from "@/components/status-chip";
 import { SubmitButton } from "@/components/submit-button";
 
@@ -185,6 +189,13 @@ export default async function PoolPage({
                         Owner
                       </span>
                     )}
+                    {isOwner && m.user_id !== pool.owner_id && (
+                      <KickMemberButton
+                        poolId={pool.id}
+                        userId={m.user_id}
+                        userName={displayName(userMap, m.user_id)}
+                      />
+                    )}
                   </li>
                 );
               })}
@@ -291,6 +302,8 @@ export default async function PoolPage({
             winningTeamId={pool.winning_team_id}
             status={pool.status}
             scoreboard={scoreboard}
+            poolId={pool.id}
+            viewerIsOwner={isOwner}
           />
         </section>
       )}
@@ -329,6 +342,8 @@ export default async function PoolPage({
             winningTeamId={pool.winning_team_id}
             status={pool.status}
             scoreboard={scoreboard}
+            poolId={pool.id}
+            viewerIsOwner={isOwner}
           />
         </section>
       )}
@@ -519,6 +534,8 @@ function PoolBody({
   winningTeamId,
   status,
   scoreboard,
+  poolId,
+  viewerIsOwner,
 }: {
   members: Member[];
   picksByUser: Map<string, Team[]>;
@@ -529,6 +546,8 @@ function PoolBody({
   winningTeamId: string | null;
   status: string;
   scoreboard: Scoreboard | null;
+  poolId: string;
+  viewerIsOwner: boolean;
 }) {
   const claimedCount = 48 - remainingCount;
   const board: Scoreboard = scoreboard ?? {
@@ -630,6 +649,16 @@ function PoolBody({
                                 ? `Drafting ${teams.length}/${m.teams_allotted}`
                                 : "Member"}
                           </div>
+                          {viewerIsOwner && status === "locked" && !done && (
+                            <div className="mt-2">
+                              <AutoDraftButton
+                                poolId={poolId}
+                                userId={m.user_id}
+                                userName={u?.name ?? "this member"}
+                                remaining={m.teams_allotted - teams.length}
+                              />
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>

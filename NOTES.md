@@ -41,7 +41,10 @@ atomically**. Whoever holds the World Cup winner wins the pool.
    8. `supabase/migrations/20260611040000_pool_target_size.sql` — soft player
       target ("4 of 10 spots taken"); recreates `pool_preview` again (with
       both grants). Required: the app selects `pools.target_size`.
-   9. `supabase/seed.sql`  (asserts exactly 48 teams)
+   9. `supabase/migrations/20260612010000_admin_tools.sql` — owner moderation
+      RPCs: `kick_member` (open pools) + `auto_draft_member` (locked pools).
+      The kick/auto-draft buttons error until applied.
+   10. `supabase/seed.sql`  (asserts exactly 48 teams)
    (Or `supabase db push` + `supabase db seed` if you wire up the CLI.)
 2. **Clerk ↔ Supabase native integration** — already configured during setup:
    - Clerk dashboard: Supabase integration enabled.
@@ -97,6 +100,14 @@ atomically**. Whoever holds the World Cup winner wins the pool.
   Resend's batch API (`lib/email.ts`; Clerk has no general-purpose email API,
   only its own auth emails). Failures are logged, never block the lock, and
   the whole step no-ops without `RESEND_API_KEY`.
+- **Profanity screening** (`lib/profanity.ts`, `obscenity` dependency):
+  display names, pool names, and notes are rejected server-side if they
+  contain slurs/curse words (English dataset + evasion transformers).
+- **Owner moderation:** while a pool is **open**, the owner can kick a member
+  (✕ on the roster chip; prompts for an optional message that's emailed to
+  them via Resend). While **locked**, the owner can ⚡ auto-draft any member
+  who's dragging — one atomic RPC assigns all their remaining teams at
+  random and completes the pool if that was the last batch.
 - **Championship odds** (`lib/odds.ts`): static approximate pre-tournament
   outright odds (decimal, June 2026) keyed by `teams.name` — no DB column, no
   API. Displayed as a normalized "chance to win it all" % (implied

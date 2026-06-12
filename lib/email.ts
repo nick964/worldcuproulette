@@ -11,6 +11,71 @@
 
 type LockEmailMember = { email: string; name: string; spins: number };
 
+// Sent when the owner removes someone from an open pool.
+export async function sendMemberKickedEmail({
+  email,
+  name,
+  poolName,
+  reason,
+}: {
+  email: string;
+  name: string;
+  poolName: string;
+  reason: string;
+}): Promise<void> {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) {
+    console.warn("[email] RESEND_API_KEY not set — skipping kicked email");
+    return;
+  }
+  const from =
+    process.env.EMAIL_FROM ?? "World Cup Roulette <pools@worldcuproulette.com>";
+  const safePool = escapeHtml(poolName);
+  const reasonBlock = reason
+    ? `<div style="background:#31362e;border-radius:8px;padding:14px 16px;margin:16px 0">
+         <p style="color:#bfcab7;font-size:11px;letter-spacing:1px;margin:0 0 6px">MESSAGE FROM THE POOL OWNER</p>
+         <p style="color:#dfe4d8;font-size:14px;line-height:1.5;margin:0">${escapeHtml(reason)}</p>
+       </div>`
+    : "";
+
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: [email],
+        subject: `You've been removed from ${poolName}`,
+        html: `
+<div style="background:#10150e;padding:32px 16px;font-family:Arial,Helvetica,sans-serif">
+  <div style="max-width:520px;margin:0 auto;background:#1c2119;border:1px solid #404a3b;border-radius:12px;padding:32px;color:#dfe4d8">
+    <p style="color:#82db6f;font-weight:bold;letter-spacing:2px;font-size:12px;margin:0">WORLD CUP ROULETTE</p>
+    <h1 style="color:#ffffff;font-size:22px;margin:12px 0">You've been removed from ${safePool}</h1>
+    <p style="font-size:15px;line-height:1.6;margin:0">
+      Hey ${escapeHtml(name)} — the owner of <strong>${safePool}</strong> has
+      removed you from the pool.
+    </p>
+    ${reasonBlock}
+    <p style="color:#899483;font-size:12px;margin:0">
+      Think it's a mistake? Reach out to the pool owner — they can send you a
+      fresh invite link while the pool is still open.
+    </p>
+  </div>
+</div>`,
+        text: `You've been removed from ${poolName}.${reason ? ` Message from the owner: ${reason}` : ""} If you think it's a mistake, contact the pool owner for a new invite link.`,
+      }),
+    });
+    if (!res.ok) {
+      console.error("[email] kicked email failed:", res.status, await res.text());
+    }
+  } catch (e) {
+    console.error("[email] kicked email errored:", e);
+  }
+}
+
 function escapeHtml(s: string): string {
   return s
     .replaceAll("&", "&amp;")
