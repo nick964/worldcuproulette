@@ -1,7 +1,8 @@
 import { ImageResponse } from "next/og";
 
 // Social share card for worldcuproulette.com (OG + Twitter).
-export const alt = "World Cup Roulette — Win the Cup by Luck";
+export const alt =
+  "World Cup Roulette — Spin the Wheel. Get Your Team. Win It All!";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -61,7 +62,7 @@ export default function OpengraphImage() {
             letterSpacing: 2,
           }}
         >
-          SPIN · DRAFT · LIFT THE CUP
+          SPIN THE WHEEL · GET YOUR TEAM · WIN IT ALL
         </div>
         <div
           style={{

@@ -35,10 +35,12 @@ export default async function Home() {
                 World Cup 2026 · 48 Nations
               </span>
             </div>
-            <h1 className="font-display text-5xl font-bold uppercase italic leading-none md:text-7xl xl:text-8xl">
-              Win the Cup
+            <h1 className="font-display text-5xl font-bold uppercase italic leading-none md:text-6xl xl:text-7xl">
+              Spin the wheel.
               <br />
-              <span className="text-primary">by luck.</span>
+              Get your team.
+              <br />
+              <span className="text-primary">Win it all!</span>
             </h1>
             <p className="max-w-xl text-lg text-on-surface-variant">
               The random-team World Cup pool. Spin the roulette wheel, get your

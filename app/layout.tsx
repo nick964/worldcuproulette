@@ -37,12 +37,12 @@ export const metadata: Metadata = {
     type: "website",
     url: SITE_URL,
     siteName: "World Cup Roulette",
-    title: "World Cup Roulette — Win the Cup by Luck",
+    title: "World Cup Roulette — Spin the Wheel. Get Your Team. Win It All!",
     description: DESCRIPTION,
   },
   twitter: {
     card: "summary_large_image",
-    title: "World Cup Roulette — Win the Cup by Luck",
+    title: "World Cup Roulette — Spin the Wheel. Get Your Team. Win It All!",
     description: DESCRIPTION,
   },
 };
