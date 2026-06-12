@@ -382,8 +382,8 @@ export default async function PoolPage({
                   or let it grow.
                 </p>
               )}
-              <details className="mt-2">
-                <summary className="cursor-pointer list-none text-[10px] font-bold uppercase tracking-widest text-on-surface-variant transition-colors hover:text-primary">
+              <details className="mt-3">
+                <summary className="inline-block cursor-pointer list-none rounded-lg border border-outline-variant px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant transition-colors hover:border-primary/50 hover:text-primary">
                   ✏️ {pool.target_size ? "Adjust" : "Set a"} target size
                 </summary>
                 <form
