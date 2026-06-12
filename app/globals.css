@@ -1,26 +1,120 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* "World Cup Roulette" design system — palette + type from the Stitch mockups.
+   Dark, sportsbook-style theme: pitch green primary, trophy gold accents. */
+@theme {
+  --color-background: #10150e;
+  --color-on-background: #dfe4d8;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-surface: #10150e;
+  --color-surface-dim: #10150e;
+  --color-surface-bright: #353b32;
+  --color-surface-container-lowest: #0b1009;
+  --color-surface-container-low: #181d16;
+  --color-surface-container: #1c2119;
+  --color-surface-container-high: #262b23;
+  --color-surface-container-highest: #31362e;
+  --color-surface-variant: #31362e;
+  --color-on-surface: #dfe4d8;
+  --color-on-surface-variant: #bfcab7;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-primary: #82db6f;
+  --color-on-primary: #003a00;
+  --color-primary-container: #006400;
+  --color-on-primary-container: #86df72;
+
+  --color-secondary: #fff9ef;
+  --color-on-secondary: #3a3000;
+  --color-secondary-container: #ffdb3c;
+  --color-on-secondary-container: #725f00;
+  --color-secondary-fixed: #ffe16d;
+  --color-secondary-fixed-dim: #e9c400;
+
+  --color-error: #ffb4ab;
+  --color-on-error: #690005;
+  --color-error-container: #93000a;
+  --color-on-error-container: #ffdad6;
+
+  --color-outline: #899483;
+  --color-outline-variant: #404a3b;
+
+  --font-display: var(--font-oswald), ui-sans-serif, sans-serif;
+  --font-body: var(--font-inter), ui-sans-serif, sans-serif;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-background);
+  color: var(--color-on-surface);
+  font-family: var(--font-body);
+}
+
+/* Frosted panel used across all screens */
+.glass-card {
+  background: rgba(49, 54, 46, 0.55);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pitch-glow {
+  box-shadow: 0 0 30px rgba(130, 219, 111, 0.3);
+}
+
+.gold-glow {
+  box-shadow: 0 0 30px rgba(255, 225, 109, 0.25);
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  background-color: var(--color-primary);
+  border-radius: 50%;
+  display: inline-block;
+  animation: live-pulse 1.5s infinite;
+}
+
+@keyframes live-pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(130, 219, 111, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px rgba(130, 219, 111, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(130, 219, 111, 0);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 14s linear infinite;
+}
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Hero flag reel: the flag strip is rendered twice and scrolled by half its
+   height, so the loop is seamless. */
+.animate-flag-reel {
+  animation: flag-reel 70s linear infinite;
+}
+
+.animate-flag-reel:hover {
+  animation-play-state: paused;
+}
+
+@keyframes flag-reel {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
 }

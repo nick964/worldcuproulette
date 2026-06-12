@@ -22,13 +22,15 @@ export async function createPool(formData: FormData) {
   const userId = await requireUser();
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Pool name is required.");
+  // Free-text house rules (entry fee, payout, …); optional.
+  const notes = String(formData.get("notes") ?? "").trim().slice(0, 500);
 
   const supabase = createClient();
   const invite_code = generateInviteCode();
 
   const { data: pool, error } = await supabase
     .from("pools")
-    .insert({ name, owner_id: userId, invite_code })
+    .insert({ name, owner_id: userId, invite_code, notes: notes || null })
     .select("id")
     .single();
   if (error) throw new Error(error.message);
@@ -39,7 +41,7 @@ export async function createPool(formData: FormData) {
     .insert({ pool_id: pool.id, user_id: userId, role: "owner" });
   if (memberErr) throw new Error(memberErr.message);
 
-  revalidatePath("/");
+  revalidatePath("/pools");
   redirect(`/pools/${pool.id}`);
 }
 
@@ -55,7 +57,7 @@ export async function joinPoolByCode(formData: FormData) {
   if (error) throw new Error(error.message);
   if (!poolId) throw new Error("That invite code is not valid.");
 
-  revalidatePath("/");
+  revalidatePath("/pools");
   redirect(`/pools/${poolId}`);
 }
 
@@ -85,6 +87,30 @@ export async function leavePool(formData: FormData) {
   if (error) throw new Error(error.message);
 
   revalidatePath(`/pools/${poolId}`);
+}
+
+// Owner-only, destructive: removes the pool and (via cascade) its members
+// and picks. RLS's pools_delete policy is the real gate; the owner_id filter
+// here just makes the "not yours" case explicit.
+export async function deletePool(formData: FormData) {
+  const userId = await requireUser();
+  const poolId = String(formData.get("poolId") ?? "");
+  if (!poolId) throw new Error("Missing pool.");
+
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("pools")
+    .delete()
+    .eq("id", poolId)
+    .eq("owner_id", userId)
+    .select("id");
+  if (error) throw new Error(error.message);
+  if (!data?.length) {
+    throw new Error("Only the pool owner can delete this pool.");
+  }
+
+  revalidatePath("/pools");
+  redirect("/pools");
 }
 
 export async function lockPool(formData: FormData) {

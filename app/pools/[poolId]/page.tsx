@@ -3,19 +3,22 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@/utils/supabase/server";
-import { getUserMap, displayName } from "@/lib/clerk";
+import { getUserMap, displayName, type DisplayUser } from "@/lib/clerk";
 import { leavePool, lockPool, setWinningTeam } from "@/lib/actions";
 import { flagUrl } from "@/lib/flags";
+import {
+  getScoreboard,
+  teamScore,
+  type Scoreboard,
+} from "@/lib/scores";
 import { Wheel } from "@/components/wheel";
 import { InviteLink } from "@/components/invite-link";
+import { DeletePoolButton } from "@/components/delete-pool";
+import { StatusChip } from "@/components/status-chip";
+import { SubmitButton } from "@/components/submit-button";
 
 type Team = { id: string; name: string; code: string; wc_group: string };
-
-const STATUS_LABEL: Record<string, string> = {
-  open: "Open",
-  locked: "Drafting",
-  complete: "Complete",
-};
+type Member = { user_id: string; role: string; teams_allotted: number };
 
 export default async function PoolPage({
   params,
@@ -28,7 +31,7 @@ export default async function PoolPage({
 
   const { data: pool } = await supabase
     .from("pools")
-    .select("id, name, status, owner_id, invite_code, winning_team_id")
+    .select("id, name, status, owner_id, invite_code, winning_team_id, notes")
     .eq("id", poolId)
     .maybeSingle();
   if (!pool) notFound();
@@ -44,7 +47,7 @@ export default async function PoolPage({
       supabase.from("teams").select("id, name, code, wc_group"),
     ]);
 
-  const members = poolMembers ?? [];
+  const members = (poolMembers ?? []) as Member[];
   const teamList = (teams ?? []) as Team[];
   const teamById = new Map(teamList.map((t) => [t.id, t]));
 
@@ -61,7 +64,13 @@ export default async function PoolPage({
   const remainingCount = teamList.length - claimed.size;
   const unclaimedTeams = teamList.filter((t) => !claimed.has(t.id));
 
-  const userMap = await getUserMap(members.map((m) => m.user_id));
+  const [userMap, scoreboard] = await Promise.all([
+    getUserMap(members.map((m) => m.user_id)),
+    // Live results only matter once teams have been drafted.
+    pool.status === "open"
+      ? Promise.resolve(null)
+      : getScoreboard(),
+  ]);
   const isOwner = pool.owner_id === userId;
   const myMembership = members.find((m) => m.user_id === userId);
   const isMember = Boolean(myMembership);
@@ -71,83 +80,131 @@ export default async function PoolPage({
   const M = members.length;
   const base = M > 0 ? Math.floor(48 / M) : 0;
   const rem = M > 0 ? 48 % M : 0;
+  const winnerHolder = pool.winning_team_id
+    ? findHolder(picksByUser, pool.winning_team_id)
+    : undefined;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
-      <Link href="/" className="text-sm text-zinc-500 hover:underline">
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8">
+      <Link
+        href="/pools"
+        className="text-[10px] font-bold uppercase tracking-widest text-primary hover:underline"
+      >
         ← All pools
       </Link>
 
-      <div className="mt-2 flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">{pool.name}</h1>
-        <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-          {STATUS_LABEL[pool.status] ?? pool.status}
-        </span>
+      {/* Header */}
+      <div className="mt-2 flex flex-col justify-between gap-4 md:flex-row md:items-end">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="font-display text-3xl font-semibold uppercase tracking-tight md:text-4xl">
+              {pool.name}
+            </h1>
+            <StatusChip status={pool.status} />
+          </div>
+          <div className="mt-2 flex items-center gap-4">
+            <AvatarStack members={members} userMap={userMap} />
+            <span className="text-xs uppercase tracking-widest text-on-surface-variant">
+              Tournament: World Cup 2026 · {M} player{M === 1 ? "" : "s"}
+            </span>
+          </div>
+        </div>
+        {pool.status === "open" && (
+          <div className="w-full md:w-96">
+            <InviteLink code={pool.invite_code} />
+          </div>
+        )}
       </div>
+
+      {pool.notes && (
+        <div className="glass-card mt-5 flex items-start gap-3 rounded-xl border-secondary-fixed/20 p-4">
+          <span aria-hidden>📌</span>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-fixed">
+              Pool notes
+            </p>
+            <p className="mt-1 whitespace-pre-line text-sm text-on-surface">
+              {pool.notes}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* OPEN: invite, manage membership, then lock */}
       {pool.status === "open" && (
-        <section className="mt-6 space-y-6">
-          <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="text-sm font-semibold text-zinc-500">Invite link</h2>
-            <p className="mt-1 text-sm text-zinc-500">
-              Share this so others can join before you lock the pool.
+        <section className="mt-8 grid gap-5 lg:grid-cols-3">
+          <div className="glass-card rounded-xl p-6 lg:col-span-2">
+            <h2 className="font-display text-lg font-semibold uppercase italic">
+              Roster ({M})
+            </h2>
+            <p className="mt-1 text-sm text-on-surface-variant">
+              Share the invite link above — membership freezes when the pool is
+              locked.
             </p>
-            <div className="mt-3">
-              <InviteLink code={pool.invite_code} />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="font-semibold">Members ({M})</h2>
-            <ul className="mt-3 flex flex-wrap gap-2">
-              {members.map((m) => (
-                <li
-                  key={m.user_id}
-                  className="rounded-full border border-zinc-200 px-3 py-1 text-sm dark:border-zinc-800"
-                >
-                  {displayName(userMap, m.user_id)}
-                  {m.user_id === pool.owner_id && (
-                    <span className="ml-1 text-xs text-zinc-400">(owner)</span>
-                  )}
-                </li>
-              ))}
+            <ul className="mt-4 flex flex-wrap gap-2">
+              {members.map((m) => {
+                const u = userMap.get(m.user_id);
+                return (
+                  <li
+                    key={m.user_id}
+                    className="flex items-center gap-2 rounded-full border border-white/10 bg-surface-container px-3 py-1.5 text-sm"
+                  >
+                    <Avatar user={u} size="sm" />
+                    {displayName(userMap, m.user_id)}
+                    {m.user_id === pool.owner_id && (
+                      <span className="text-[9px] font-bold uppercase tracking-widest text-secondary-fixed">
+                        Owner
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
 
             {isMember && !isOwner && (
-              <form action={leavePool} className="mt-4">
+              <form action={leavePool} className="mt-5">
                 <input type="hidden" name="poolId" value={pool.id} />
-                <button className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700">
+                <SubmitButton
+                  pendingLabel="Leaving…"
+                  className="rounded-lg border border-outline-variant px-4 py-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant transition-colors hover:border-error/50 hover:text-error disabled:opacity-50"
+                >
                   Leave pool
-                </button>
+                </SubmitButton>
               </form>
             )}
           </div>
 
           {isOwner && (
-            <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <h2 className="font-semibold">Lock &amp; start drafting</h2>
-              <p className="mt-1 text-sm text-zinc-500">
-                Locking freezes membership and distributes all 48 teams. With{" "}
-                {M} member{M === 1 ? "" : "s"}:{" "}
+            <div className="glass-card rounded-xl border-secondary-fixed/20 p-6">
+              <h2 className="font-display text-lg font-semibold uppercase italic text-secondary-fixed">
+                Lock &amp; start drafting
+              </h2>
+              <p className="mt-2 text-sm text-on-surface-variant">
+                Locking freezes the roster and deals out all 48 nations. With{" "}
+                {M} player{M === 1 ? "" : "s"}:{" "}
                 {rem === 0 ? (
-                  <>everyone gets <strong>{base}</strong> teams.</>
+                  <>
+                    everyone gets{" "}
+                    <strong className="text-on-surface">{base}</strong> teams.
+                  </>
                 ) : (
                   <>
-                    <strong>{rem}</strong> member{rem === 1 ? "" : "s"} get{" "}
-                    <strong>{base + 1}</strong>, the rest get{" "}
-                    <strong>{base}</strong>.
+                    <strong className="text-on-surface">{rem}</strong> player
+                    {rem === 1 ? "" : "s"} get{" "}
+                    <strong className="text-on-surface">{base + 1}</strong>,
+                    the rest get{" "}
+                    <strong className="text-on-surface">{base}</strong>.
                   </>
                 )}
               </p>
-              <form action={lockPool} className="mt-3">
+              <form action={lockPool} className="mt-4">
                 <input type="hidden" name="poolId" value={pool.id} />
-                <button
-                  disabled={M < 1}
-                  className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                <SubmitButton
+                  pendingLabel="Locking…"
+                  className="gold-glow w-full rounded-lg bg-secondary-container py-3 font-display font-bold uppercase tracking-widest text-on-secondary-container transition-all active:scale-[0.98] disabled:opacity-50"
                 >
-                  Lock pool
-                </button>
+                  🔒 Lock pool
+                </SubmitButton>
               </form>
             </div>
           )}
@@ -156,13 +213,18 @@ export default async function PoolPage({
 
       {/* LOCKED: the wheel + standings */}
       {pool.status === "locked" && (
-        <section className="mt-6 space-y-6">
+        <section className="mt-8 space-y-8">
           {isMember ? (
             <div>
               <div className="text-center">
-                <h2 className="text-lg font-semibold">Your draft</h2>
-                <p className="mt-1 text-sm text-zinc-500">
-                  Spins remaining: <strong>{Math.max(mySpinsLeft, 0)}</strong>
+                <h2 className="font-display text-2xl font-semibold uppercase italic">
+                  Your draft
+                </h2>
+                <p className="mt-1 text-sm text-on-surface-variant">
+                  Spins remaining:{" "}
+                  <strong className="font-display text-lg text-secondary-fixed">
+                    {Math.max(mySpinsLeft, 0)}
+                  </strong>
                 </p>
               </div>
               <div className="mt-4">
@@ -175,35 +237,39 @@ export default async function PoolPage({
               </div>
             </div>
           ) : (
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-on-surface-variant">
               This pool is locked; you are not a participant.
             </p>
           )}
 
-          <Standings
+          <PoolBody
             members={members}
             picksByUser={picksByUser}
             userMap={userMap}
             ownerId={pool.owner_id}
             remainingCount={remainingCount}
+            winnerHolder={winnerHolder}
+            winningTeamId={pool.winning_team_id}
+            status={pool.status}
+            scoreboard={scoreboard}
           />
         </section>
       )}
 
       {/* COMPLETE: winner + final standings */}
       {pool.status === "complete" && (
-        <section className="mt-6 space-y-6">
+        <section className="mt-8 space-y-6">
           {pool.winning_team_id ? (
             <WinnerBanner
               team={teamById.get(pool.winning_team_id)}
-              holder={findHolder(picksByUser, pool.winning_team_id)}
+              holder={winnerHolder}
               userMap={userMap}
             />
           ) : (
-            <p className="text-sm text-zinc-500">
-              Draft complete. The owner can set the winning team once the World
-              Cup final is decided.
-            </p>
+            <div className="glass-card rounded-xl p-6 text-center text-sm text-on-surface-variant">
+              Draft complete. The owner sets the winning team once the World
+              Cup final is decided — whoever holds that nation takes the pool.
+            </div>
           )}
 
           {isOwner && (
@@ -214,14 +280,34 @@ export default async function PoolPage({
             />
           )}
 
-          <Standings
+          <PoolBody
             members={members}
             picksByUser={picksByUser}
             userMap={userMap}
             ownerId={pool.owner_id}
             remainingCount={remainingCount}
+            winnerHolder={winnerHolder}
+            winningTeamId={pool.winning_team_id}
+            status={pool.status}
+            scoreboard={scoreboard}
           />
         </section>
+      )}
+
+      {/* Owner danger zone — available in every state */}
+      {isOwner && (
+        <div className="mt-10 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-error/20 bg-error-container/10 p-5">
+          <div>
+            <h2 className="text-xs font-bold uppercase tracking-widest text-error">
+              Danger zone
+            </h2>
+            <p className="mt-1 text-sm text-on-surface-variant">
+              Deleting the pool removes the invite link, all members, and every
+              drafted team. No undo.
+            </p>
+          </div>
+          <DeletePoolButton poolId={pool.id} poolName={pool.name} />
+        </div>
       )}
     </div>
   );
@@ -237,6 +323,68 @@ function findHolder(
   return undefined;
 }
 
+function Avatar({
+  user,
+  size = "md",
+}: {
+  user: DisplayUser | undefined;
+  size?: "sm" | "md";
+}) {
+  const cls =
+    size === "sm"
+      ? "h-5 w-5 rounded-full border border-white/10 object-cover"
+      : "h-9 w-9 rounded-full border border-primary/30 object-cover";
+  if (user?.imageUrl) {
+    return <img src={user.imageUrl} alt={user.name} className={cls} />;
+  }
+  return (
+    <span
+      className={`${cls} flex items-center justify-center bg-surface-variant text-[10px] font-bold uppercase`}
+    >
+      {(user?.name ?? "?").slice(0, 1)}
+    </span>
+  );
+}
+
+function AvatarStack({
+  members,
+  userMap,
+}: {
+  members: Member[];
+  userMap: Map<string, DisplayUser>;
+}) {
+  const shown = members.slice(0, 5);
+  const extra = members.length - shown.length;
+  return (
+    <div className="flex -space-x-2">
+      {shown.map((m) => {
+        const u = userMap.get(m.user_id);
+        return u?.imageUrl ? (
+          <img
+            key={m.user_id}
+            src={u.imageUrl}
+            alt={u.name}
+            title={u.name}
+            className="h-7 w-7 rounded-full border-2 border-background object-cover"
+          />
+        ) : (
+          <span
+            key={m.user_id}
+            className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-background bg-surface-variant text-[10px] font-bold uppercase"
+          >
+            {(u?.name ?? "?").slice(0, 1)}
+          </span>
+        );
+      })}
+      {extra > 0 && (
+        <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-background bg-surface-variant text-[10px] font-bold">
+          +{extra}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function WinnerBanner({
   team,
   holder,
@@ -244,23 +392,27 @@ function WinnerBanner({
 }: {
   team: Team | undefined;
   holder: string | undefined;
-  userMap: Map<string, { name: string }>;
+  userMap: Map<string, DisplayUser>;
 }) {
   if (!team) return null;
   return (
-    <div className="rounded-xl border border-amber-300 bg-amber-50 p-6 text-center dark:border-amber-700 dark:bg-amber-950/30">
-      <p className="text-sm font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
-        🏆 World Cup winner
+    <div className="gold-glow glass-card rounded-xl border-secondary-fixed/40 p-8 text-center">
+      <p className="text-xs font-bold uppercase tracking-[0.2em] text-secondary-fixed">
+        🏆 World Cup Winner
       </p>
       <img
         src={flagUrl(team.code, "w320")}
         alt={team.name}
-        className="mx-auto mt-3 h-16 w-auto rounded shadow"
+        className="mx-auto mt-4 h-16 w-auto rounded shadow-xl"
       />
-      <p className="mt-2 text-xl font-bold">{team.name}</p>
-      <p className="mt-1 text-zinc-600 dark:text-zinc-400">
+      <p className="mt-3 font-display text-3xl font-bold uppercase italic">
+        {team.name}
+      </p>
+      <p className="mt-2 text-on-surface-variant">
         Held by{" "}
-        <strong>{holder ? (userMap.get(holder)?.name ?? "Member") : "nobody"}</strong>{" "}
+        <strong className="text-secondary-fixed">
+          {holder ? (userMap.get(holder)?.name ?? "Member") : "nobody"}
+        </strong>{" "}
         — they win the pool!
       </p>
     </div>
@@ -277,26 +429,24 @@ function WinnerSetter({
   current: string | null;
 }) {
   const sorted = [...teams].sort(
-    (a, b) => a.wc_group.localeCompare(b.wc_group) || a.name.localeCompare(b.name),
+    (a, b) =>
+      a.wc_group.localeCompare(b.wc_group) || a.name.localeCompare(b.name),
   );
   return (
-    <form
-      action={setWinningTeam}
-      className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
-    >
-      <h2 className="font-semibold">
+    <form action={setWinningTeam} className="glass-card rounded-xl p-6">
+      <h2 className="font-display text-lg font-semibold uppercase italic">
         {current ? "Change winning team" : "Set the winning team"}
       </h2>
-      <p className="mt-1 text-sm text-zinc-500">
+      <p className="mt-1 text-sm text-on-surface-variant">
         Owner only — choose the nation that won the World Cup.
       </p>
       <input type="hidden" name="poolId" value={poolId} />
-      <div className="mt-3 flex gap-2">
+      <div className="mt-4 flex gap-2">
         <select
           name="teamId"
           required
           defaultValue={current ?? ""}
-          className="flex-1 rounded-md border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
+          className="min-w-0 flex-1 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm outline-none transition-colors focus:border-primary"
         >
           <option value="" disabled>
             Select a team…
@@ -307,77 +457,297 @@ function WinnerSetter({
             </option>
           ))}
         </select>
-        <button className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white">
+        <SubmitButton
+          pendingLabel="Saving…"
+          className="shrink-0 rounded-lg bg-secondary-container px-5 py-2.5 text-xs font-bold uppercase tracking-widest text-on-secondary-container transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
           Save winner
-        </button>
+        </SubmitButton>
       </div>
     </form>
   );
 }
 
-function Standings({
+// Standings table + "Pool Pulse" stats, shared by the locked and complete
+// views. Members are ranked by the live points of the nations they hold.
+function PoolBody({
   members,
   picksByUser,
   userMap,
   ownerId,
   remainingCount,
+  winnerHolder,
+  winningTeamId,
+  status,
+  scoreboard,
 }: {
-  members: { user_id: string; teams_allotted: number }[];
+  members: Member[];
   picksByUser: Map<string, Team[]>;
-  userMap: Map<string, { name: string }>;
+  userMap: Map<string, DisplayUser>;
   ownerId: string;
   remainingCount: number;
+  winnerHolder: string | undefined;
+  winningTeamId: string | null;
+  status: string;
+  scoreboard: Scoreboard | null;
 }) {
+  const claimedCount = 48 - remainingCount;
+  const board: Scoreboard = scoreboard ?? {
+    byTeamName: new Map(),
+    matchesPlayed: 0,
+    totalMatches: 104,
+    ok: false,
+  };
+  const hasResults = board.matchesPlayed > 0;
+
+  // Rank members by total points of their nations; FIFA-style tiebreakers
+  // (goal difference, then goals scored), then name for stability.
+  const rows = members
+    .map((m) => {
+      const teams = [...(picksByUser.get(m.user_id) ?? [])].sort(
+        (a, b) =>
+          teamScore(board, b.name).points - teamScore(board, a.name).points ||
+          a.name.localeCompare(b.name),
+      );
+      let points = 0;
+      let gd = 0;
+      let gf = 0;
+      for (const t of teams) {
+        const s = teamScore(board, t.name);
+        points += s.points;
+        gd += s.gf - s.ga;
+        gf += s.gf;
+      }
+      return { member: m, teams, points, gd, gf };
+    })
+    .sort(
+      (a, b) =>
+        b.points - a.points ||
+        b.gd - a.gd ||
+        b.gf - a.gf ||
+        (userMap.get(a.member.user_id)?.name ?? "").localeCompare(
+          userMap.get(b.member.user_id)?.name ?? "",
+        ),
+    );
+
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold">Standings</h2>
-        <span className="text-sm text-zinc-500">
-          {remainingCount} team{remainingCount === 1 ? "" : "s"} unclaimed
-        </span>
-      </div>
-      <ul className="mt-4 space-y-4">
-        {members.map((m) => {
-          const teams = picksByUser.get(m.user_id) ?? [];
-          return (
-            <li
-              key={m.user_id}
-              className="border-t border-zinc-100 pt-3 first:border-t-0 first:pt-0 dark:border-zinc-800"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-medium">
-                  {userMap.get(m.user_id)?.name ?? "Member"}
-                  {m.user_id === ownerId && (
-                    <span className="ml-1 text-xs text-zinc-400">(owner)</span>
-                  )}
-                </span>
-                <span className="text-xs text-zinc-500">
-                  {teams.length}/{m.teams_allotted} drafted
-                </span>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {teams.length === 0 && (
-                  <span className="text-xs text-zinc-400">No teams yet</span>
-                )}
-                {teams.map((t) => (
-                  <span
-                    key={t.id}
-                    className="flex items-center gap-1.5 rounded-full border border-zinc-200 px-2 py-1 text-xs dark:border-zinc-800"
-                    title={`Group ${t.wc_group}`}
+    <div className="grid gap-5 lg:grid-cols-3">
+      {/* Standings */}
+      <div className="glass-card overflow-hidden rounded-xl lg:col-span-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-white/5 px-6 py-4">
+          <h2 className="font-display text-lg font-semibold uppercase italic">
+            Live rankings
+          </h2>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
+            3 pts a win · 1 a draw
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left">
+            <thead>
+              <tr className="border-b border-white/5 text-[10px] uppercase tracking-widest text-on-surface-variant">
+                <th className="py-3 pl-6 pr-2 font-semibold">Rank</th>
+                <th className="px-4 py-3 font-semibold">Member</th>
+                <th className="px-4 py-3 font-semibold">Nations</th>
+                <th className="py-3 pl-4 pr-6 text-right font-semibold">
+                  Points
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {rows.map(({ member: m, teams, points, gd }, i) => {
+                const u = userMap.get(m.user_id);
+                const isWinner =
+                  winnerHolder !== undefined && m.user_id === winnerHolder;
+                const done =
+                  m.teams_allotted > 0 && teams.length >= m.teams_allotted;
+                return (
+                  <tr
+                    key={m.user_id}
+                    className={
+                      isWinner
+                        ? "border-y-2 border-secondary-fixed/30 bg-secondary-fixed/10"
+                        : "transition-colors hover:bg-white/5"
+                    }
                   >
-                    <img
-                      src={flagUrl(t.code, "w80")}
-                      alt={t.name}
-                      className="h-3.5 w-auto rounded-sm"
-                    />
-                    {t.name}
-                  </span>
-                ))}
+                    <td className="py-4 pl-6 pr-2">
+                      <RankBadge rank={i + 1} />
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-3">
+                        <Avatar user={u} />
+                        <div>
+                          <div
+                            className={`font-bold ${isWinner ? "text-secondary-fixed" : ""}`}
+                          >
+                            {u?.name ?? "Member"}
+                            {isWinner && " 🏆"}
+                          </div>
+                          <div className="text-[10px] uppercase tracking-widest text-on-surface-variant">
+                            {m.user_id === ownerId ? "Owner · " : ""}
+                            {done
+                              ? `${teams.length}/${m.teams_allotted} drafted`
+                              : status === "locked"
+                                ? `Drafting ${teams.length}/${m.teams_allotted}`
+                                : "Member"}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex max-w-md flex-wrap gap-1.5">
+                        {teams.length === 0 && (
+                          <span className="text-xs text-on-surface-variant">
+                            No teams yet
+                          </span>
+                        )}
+                        {teams.map((t) => {
+                          const s = teamScore(board, t.name);
+                          return (
+                            <span
+                              key={t.id}
+                              title={`Group ${t.wc_group} · ${s.wins}W ${s.draws}D ${s.losses}L`}
+                              className={`flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs ${
+                                t.id === winningTeamId
+                                  ? "border-secondary-fixed/60 bg-secondary-fixed/15 font-bold text-secondary-fixed"
+                                  : "border-white/10 bg-surface-container"
+                              }`}
+                            >
+                              <img
+                                src={flagUrl(t.code, "w80")}
+                                alt={t.name}
+                                className="h-3.5 w-auto rounded-sm"
+                              />
+                              {t.name}
+                              {hasResults && (
+                                <span
+                                  className={`font-display ${
+                                    s.points > 0
+                                      ? "text-secondary-fixed"
+                                      : "text-on-surface-variant"
+                                  }`}
+                                >
+                                  {s.points}
+                                </span>
+                              )}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td className="py-4 pl-4 pr-6 text-right">
+                      <div className="font-display text-2xl font-semibold text-secondary-fixed">
+                        {points}
+                      </div>
+                      {hasResults && (
+                        <div className="text-[10px] uppercase tracking-widest text-on-surface-variant">
+                          GD {gd > 0 ? `+${gd}` : gd}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="border-t border-white/5 bg-surface-container-low/30 px-6 py-3 text-[10px] uppercase tracking-widest text-on-surface-variant">
+          {board.ok
+            ? hasResults
+              ? `Live results · ${board.matchesPlayed}/${board.totalMatches} matches played · knockout wins (incl. pens) count 3`
+              : "No results yet — rankings update as matches finish"
+            : "Live results temporarily unavailable — showing last known points"}
+        </div>
+      </div>
+
+      {/* Pool Pulse */}
+      <aside className="space-y-5">
+        <div className="glass-card relative overflow-hidden rounded-xl p-6">
+          <div className="absolute -right-4 -top-4 text-[100px] opacity-10">
+            🏆
+          </div>
+          <h3 className="font-display text-lg font-semibold uppercase italic">
+            Pool Pulse
+          </h3>
+          <div className="mt-4 space-y-4">
+            <div>
+              <div className="mb-1 flex justify-between text-[10px] font-bold uppercase tracking-widest">
+                <span className="text-on-surface-variant">Teams claimed</span>
+                <span className="text-secondary-fixed">
+                  {claimedCount}/48
+                </span>
               </div>
-            </li>
-          );
-        })}
-      </ul>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-container-highest">
+                <div
+                  className="h-full bg-secondary-fixed"
+                  style={{ width: `${(claimedCount / 48) * 100}%` }}
+                />
+              </div>
+            </div>
+            <div>
+              <div className="mb-1 flex justify-between text-[10px] font-bold uppercase tracking-widest">
+                <span className="text-on-surface-variant">
+                  Tournament progress
+                </span>
+                <span className="text-primary">
+                  {board.matchesPlayed}/{board.totalMatches}
+                </span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-container-highest">
+                <div
+                  className="h-full bg-primary"
+                  style={{
+                    width: `${(board.matchesPlayed / Math.max(board.totalMatches, 1)) * 100}%`,
+                  }}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg bg-white/5 p-3">
+                <p className="text-[10px] uppercase tracking-widest text-on-surface-variant">
+                  Players
+                </p>
+                <p className="font-display text-2xl text-primary">
+                  {members.length}
+                </p>
+              </div>
+              <div className="rounded-lg bg-white/5 p-3">
+                <p className="text-[10px] uppercase tracking-widest text-on-surface-variant">
+                  Unclaimed
+                </p>
+                <p className="font-display text-2xl text-secondary-fixed">
+                  {remainingCount}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs leading-relaxed text-on-surface-variant">
+              <span className="text-secondary-fixed">ℹ️</span> Nations earn 3
+              points per win and 1 per draw (knockout wins count 3, even on
+              penalties). Your score is the sum across all your nations —
+              results refresh every few minutes. Whoever holds the World Cup
+              champion wins the pool.
+            </p>
+          </div>
+        </div>
+      </aside>
     </div>
+  );
+}
+
+function RankBadge({ rank }: { rank: number }) {
+  const style =
+    rank === 1
+      ? "bg-secondary-fixed text-black"
+      : rank === 2
+        ? "bg-slate-300 text-black"
+        : rank === 3
+          ? "bg-amber-700 text-white"
+          : "bg-surface-variant text-on-surface-variant";
+  return (
+    <span
+      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-sm font-bold ${style}`}
+    >
+      {rank}
+    </span>
   );
 }

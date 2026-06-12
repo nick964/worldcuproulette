@@ -26,13 +26,17 @@ export function InviteLink({ code }: { code: string }) {
         readOnly
         value={url}
         onFocus={(e) => e.currentTarget.select()}
-        className="flex-1 truncate rounded-md border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+        className="min-w-0 flex-1 truncate rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm text-on-surface-variant outline-none transition-colors focus:border-primary"
       />
       <button
         onClick={copy}
-        className="shrink-0 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white dark:bg-white dark:text-zinc-900"
+        className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-bold uppercase tracking-widest transition-all ${
+          copied
+            ? "bg-secondary-container text-on-secondary-container"
+            : "bg-primary text-on-primary hover:opacity-90"
+        }`}
       >
-        {copied ? "Copied!" : "Copy"}
+        {copied ? "Copied ✓" : "Copy link"}
       </button>
     </div>
   );

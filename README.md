@@ -1,3 +1,8 @@
+# World Cup Roulette
+
+Spin the wheel, draft your World Cup nations, and win the pool when your team
+lifts the trophy. See `NOTES.md` for architecture and setup.
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
