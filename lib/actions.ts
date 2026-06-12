@@ -2,8 +2,11 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
+import { getUserEmails } from "@/lib/clerk";
+import { sendPoolLockedEmails } from "@/lib/email";
 
 async function requireUser(): Promise<string> {
   const { userId } = await auth();
@@ -24,13 +27,26 @@ export async function createPool(formData: FormData) {
   if (!name) throw new Error("Pool name is required.");
   // Free-text house rules (entry fee, payout, …); optional.
   const notes = String(formData.get("notes") ?? "").trim().slice(0, 500);
+  // Soft player target ("4 of 10 spots taken") — display-only, not enforced.
+  const targetRaw = String(formData.get("target_size") ?? "").trim();
+  let target_size: number | null = null;
+  if (targetRaw) {
+    const n = parseInt(targetRaw, 10);
+    if (Number.isFinite(n)) target_size = Math.min(48, Math.max(1, n));
+  }
 
   const supabase = createClient();
   const invite_code = generateInviteCode();
 
   const { data: pool, error } = await supabase
     .from("pools")
-    .insert({ name, owner_id: userId, invite_code, notes: notes || null })
+    .insert({
+      name,
+      owner_id: userId,
+      invite_code,
+      notes: notes || null,
+      target_size,
+    })
     .select("id")
     .single();
   if (error) throw new Error(error.message);
@@ -121,6 +137,35 @@ export async function lockPool(formData: FormData) {
   const supabase = createClient();
   const { error } = await supabase.rpc("lock_pool", { p_pool_id: poolId });
   if (error) throw new Error(error.message);
+
+  // The draft is open — email every member their spin count. Email problems
+  // are logged but never block the lock.
+  try {
+    const [{ data: pool }, { data: members }] = await Promise.all([
+      supabase.from("pools").select("name").eq("id", poolId).single(),
+      supabase
+        .from("pool_members")
+        .select("user_id, teams_allotted")
+        .eq("pool_id", poolId),
+    ]);
+    if (pool && members?.length) {
+      const emailMap = await getUserEmails(members.map((m) => m.user_id));
+      const origin =
+        (await headers()).get("origin") ?? "https://worldcuproulette.com";
+      await sendPoolLockedEmails({
+        poolName: pool.name,
+        poolUrl: `${origin}/pools/${poolId}`,
+        members: members.flatMap((m) => {
+          const u = emailMap.get(m.user_id);
+          return u?.email
+            ? [{ email: u.email, name: u.name, spins: m.teams_allotted }]
+            : [];
+        }),
+      });
+    }
+  } catch (e) {
+    console.error("[email] pool-locked notification failed:", e);
+  }
 
   revalidatePath(`/pools/${poolId}`);
 }

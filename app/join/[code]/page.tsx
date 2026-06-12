@@ -31,6 +31,7 @@ export default async function JoinPage({
         status: string;
         member_count: number;
         notes: string | null;
+        target_size: number | null;
       }
     | undefined;
 
@@ -79,9 +80,21 @@ export default async function JoinPage({
           {preview.name}
         </h1>
         <p className="mt-2 text-on-surface-variant">
-          {preview.member_count}{" "}
-          {Number(preview.member_count) === 1 ? "player" : "players"} in so
-          far.
+          {preview.target_size &&
+          Number(preview.member_count) < preview.target_size ? (
+            <>
+              <strong className="text-secondary-fixed">
+                {preview.member_count} of {preview.target_size}
+              </strong>{" "}
+              spots taken.
+            </>
+          ) : (
+            <>
+              {preview.member_count}{" "}
+              {Number(preview.member_count) === 1 ? "player" : "players"} in
+              so far.
+            </>
+          )}
         </p>
 
         {preview.notes && (

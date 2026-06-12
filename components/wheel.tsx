@@ -5,15 +5,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { spinForTeam, type SpinResult } from "@/lib/actions";
 import { flagUrl } from "@/lib/flags";
+import { winChanceLabel } from "@/lib/odds";
 
 type Team = { id: string; name: string; code: string; wc_group: string };
 
 const SPIN_VELOCITY = 32; // px per frame while free-spinning (~1920 px/s @60fps)
 const SPIN_PPS = SPIN_VELOCITY * 60; // px per second
-// Reel travel after STOP before landing. Short, so the reveal is snappy
-// (~2.8s); the landing slot is rewritten to the server team while it's still
-// offscreen, so we never need to travel a whole loop to reach it.
-const MIN_DECEL_DIST = 1800;
+// Reel travel after STOP before landing (~5s with the quartic ease: fast at
+// first, then a long dramatic crawl onto the flag). The landing slot is
+// rewritten to the server team while it's still offscreen, so we never need
+// to travel a whole loop to reach it. Impatient? The Skip button stays.
+const MIN_DECEL_DIST = 2400;
 
 type Phase = "idle" | "spinning" | "stopping" | "drawing" | "revealed";
 
@@ -41,6 +43,7 @@ type Decel = {
   dist: number;
   durMs: number;
   start: number;
+  pow: number; // ease-out exponent: higher = longer suspense tail
   team: SpinResult;
 };
 
@@ -117,7 +120,7 @@ export function Wheel({
     if (decel) {
       if (decel.start === 0) decel.start = now; // stamped on the first frame
       const p = Math.min(1, (now - decel.start) / decel.durMs);
-      const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
+      const eased = 1 - Math.pow(1 - p, decel.pow);
       offsetRef.current = decel.from + decel.dist * eased;
       apply();
       if (p >= 1) {
@@ -187,10 +190,11 @@ export function Wheel({
     const target = slot * itemW + itemW / 2 - window / 2;
     setOverride({ index: slot, team });
     const dist = target - current;
-    // duration sized so easeOutCubic's initial velocity matches the spin speed
-    const durMs = ((3 * dist) / SPIN_PPS) * 1000;
+    // quartic ease-out; duration sized so the initial velocity matches the
+    // spin speed, which buys a slow, dramatic final approach
+    const durMs = ((4 * dist) / SPIN_PPS) * 1000;
 
-    decelRef.current = { from: current, dist, durMs, start: 0, team };
+    decelRef.current = { from: current, dist, durMs, start: 0, pow: 4, team };
   };
 
   // Skip the landing animation and reveal the team immediately.
@@ -254,6 +258,7 @@ export function Wheel({
       dist: target - current,
       durMs: 700,
       start: 0,
+      pow: 3, // quick pick stays snappy
       team,
     };
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -430,6 +435,15 @@ export function Wheel({
               </span>
               <span className="text-xs text-on-surface-variant">
                 Group {result.wc_group}
+                {winChanceLabel(result.name) && (
+                  <>
+                    {" · "}roughly{" "}
+                    <span className="font-bold text-secondary-fixed">
+                      {winChanceLabel(result.name)}
+                    </span>{" "}
+                    chance of winning, based on odds
+                  </>
+                )}
               </span>
             </div>
             <button
@@ -468,6 +482,7 @@ function BulkResultChips({ results }: { results: SpinResult[] }) {
           {t.name}
           <span className="text-[10px] text-on-surface-variant">
             {t.wc_group}
+            {winChanceLabel(t.name) ? ` · ${winChanceLabel(t.name)}` : ""}
           </span>
         </span>
       ))}

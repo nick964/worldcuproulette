@@ -11,6 +11,7 @@ import {
   teamScore,
   type Scoreboard,
 } from "@/lib/scores";
+import { winChanceLabel } from "@/lib/odds";
 import { Wheel } from "@/components/wheel";
 import { InviteLink } from "@/components/invite-link";
 import { DeletePoolButton } from "@/components/delete-pool";
@@ -31,7 +32,9 @@ export default async function PoolPage({
 
   const { data: pool } = await supabase
     .from("pools")
-    .select("id, name, status, owner_id, invite_code, winning_team_id, notes")
+    .select(
+      "id, name, status, owner_id, invite_code, winning_team_id, notes, target_size",
+    )
     .eq("id", poolId)
     .maybeSingle();
   if (!pool) notFound();
@@ -105,7 +108,10 @@ export default async function PoolPage({
           <div className="mt-2 flex items-center gap-4">
             <AvatarStack members={members} userMap={userMap} />
             <span className="text-xs uppercase tracking-widest text-on-surface-variant">
-              Tournament: World Cup 2026 · {M} player{M === 1 ? "" : "s"}
+              Tournament: World Cup 2026 ·{" "}
+              {pool.status === "open" && pool.target_size
+                ? `${M}/${pool.target_size} players`
+                : `${M} player${M === 1 ? "" : "s"}`}
             </span>
           </div>
         </div>
@@ -135,6 +141,7 @@ export default async function PoolPage({
         <WaitingRoom
           ownerName={displayName(userMap, pool.owner_id)}
           memberCount={M}
+          targetSize={pool.target_size}
           base={base}
           rem={rem}
           teams={teamList}
@@ -146,12 +153,23 @@ export default async function PoolPage({
         <section className="mt-8 grid gap-5 lg:grid-cols-3">
           <div className="glass-card rounded-xl p-6 lg:col-span-2">
             <h2 className="font-display text-lg font-semibold uppercase italic">
-              Roster ({M})
+              Roster ({M}
+              {pool.target_size ? ` of ${pool.target_size}` : ""})
             </h2>
             <p className="mt-1 text-sm text-on-surface-variant">
               Share the invite link above — membership freezes when the pool is
               locked.
             </p>
+            {pool.target_size && (
+              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-container-highest">
+                <div
+                  className="h-full bg-primary"
+                  style={{
+                    width: `${Math.min(100, (M / pool.target_size) * 100)}%`,
+                  }}
+                />
+              </div>
+            )}
             <ul className="mt-4 flex flex-wrap gap-2">
               {members.map((m) => {
                 const u = userMap.get(m.user_id);
@@ -207,6 +225,16 @@ export default async function PoolPage({
                     <strong className="text-on-surface">{base}</strong>.
                   </>
                 )}
+              </p>
+              {pool.target_size && (
+                <p className="mt-2 text-xs text-on-surface-variant">
+                  Your target is {pool.target_size} players ({M} in so far) —
+                  but it&apos;s not enforced. Lock whenever you&apos;re ready,
+                  or let it grow.
+                </p>
+              )}
+              <p className="mt-2 text-xs text-on-surface-variant">
+                Locking emails every member that the draft is open.
               </p>
               <form action={lockPool} className="mt-4">
                 <input type="hidden" name="poolId" value={pool.id} />
@@ -617,7 +645,11 @@ function PoolBody({
                           return (
                             <span
                               key={t.id}
-                              title={`Group ${t.wc_group} · ${s.wins}W ${s.draws}D ${s.losses}L`}
+                              title={`Group ${t.wc_group} · ${s.wins}W ${s.draws}D ${s.losses}L${
+                                winChanceLabel(t.name)
+                                  ? ` · ${winChanceLabel(t.name)} to win it all`
+                                  : ""
+                              }`}
                               className={`flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs ${
                                 t.id === winningTeamId
                                   ? "border-secondary-fixed/60 bg-secondary-fixed/15 font-bold text-secondary-fixed"
@@ -750,24 +782,30 @@ function PoolBody({
 function WaitingRoom({
   ownerName,
   memberCount,
+  targetSize,
   base,
   rem,
   teams,
 }: {
   ownerName: string;
   memberCount: number;
+  targetSize: number | null;
   base: number;
   rem: number;
   teams: Team[];
 }) {
   const spinsLabel = rem === 0 ? `${base}` : `${base}–${base + 1}`;
+  const statusLabel =
+    targetSize && memberCount < targetSize
+      ? `Pool open — ${memberCount} of ${targetSize} spots taken`
+      : "Pool open — squad still assembling";
   return (
     <section className="glass-card mt-8 overflow-hidden rounded-xl">
       <div className="p-6">
         <div className="flex items-center gap-2 text-primary">
           <span className="live-dot" />
           <span className="text-[10px] font-bold uppercase tracking-widest">
-            Pool open — squad still assembling
+            {statusLabel}
           </span>
         </div>
         <h2 className="mt-2 font-display text-2xl font-semibold uppercase italic">
@@ -776,8 +814,12 @@ function WaitingRoom({
         <p className="mt-2 max-w-2xl text-sm text-on-surface-variant">
           This pool is still accepting players — anyone with the invite link
           can join until <strong className="text-on-surface">{ownerName}</strong>{" "}
-          locks it. At lock, all 48 nations are dealt out at random, and the
-          spinning starts.
+          locks it.
+          {targetSize
+            ? ` The target is ${targetSize} players, but it's not a hard cap — the owner can lock earlier or let it grow.`
+            : ""}{" "}
+          At lock, all 48 nations are dealt out at random, and the spinning
+          starts — you&apos;ll get an email the moment it happens.
         </p>
         <div className="mt-4 inline-flex items-center gap-3 rounded-lg border border-secondary-fixed/30 bg-secondary-fixed/10 px-4 py-3">
           <span className="text-2xl">🎡</span>
@@ -830,7 +872,11 @@ function FlagMarqueeRow({
             key={`${t.id}-${i}`}
             src={flagUrl(t.code, "w160")}
             alt={t.name}
-            title={`${t.name} · Group ${t.wc_group}`}
+            title={`${t.name} · Group ${t.wc_group}${
+              winChanceLabel(t.name)
+                ? ` · ${winChanceLabel(t.name)} to win it all`
+                : ""
+            }`}
             className="h-10 w-auto rounded shadow-md"
             draggable={false}
           />

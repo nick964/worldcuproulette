@@ -38,7 +38,10 @@ atomically**. Whoever holds the World Cup winner wins the pool.
    7. `supabase/migrations/20260611030000_public_preview.sql` — lets
       signed-out invitees preview a pool (`/join/[code]` is public; without
       this grant they see "Invalid invite").
-   8. `supabase/seed.sql`  (asserts exactly 48 teams)
+   8. `supabase/migrations/20260611040000_pool_target_size.sql` — soft player
+      target ("4 of 10 spots taken"); recreates `pool_preview` again (with
+      both grants). Required: the app selects `pools.target_size`.
+   9. `supabase/seed.sql`  (asserts exactly 48 teams)
    (Or `supabase db push` + `supabase db seed` if you wire up the CLI.)
 2. **Clerk ↔ Supabase native integration** — already configured during setup:
    - Clerk dashboard: Supabase integration enabled.
@@ -55,6 +58,11 @@ atomically**. Whoever holds the World Cup winner wins the pool.
 - `CLERK_SECRET_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` — **only needed to run the optional Node concurrency
   script** (`scripts/`), never shipped to the client. Add it if you want to run that script.
+- `RESEND_API_KEY` — for the "pool locked, come spin!" emails (`lib/email.ts`).
+  Optional: without it the app logs a warning and skips emails (lock still works).
+- `EMAIL_FROM` — optional sender override; defaults to
+  `World Cup Roulette <pools@worldcuproulette.com>` (the domain must be
+  verified in Resend for sends to succeed).
 
 ---
 
@@ -81,6 +89,20 @@ atomically**. Whoever holds the World Cup winner wins the pool.
 - **Delete pool:** owner-only, any status, confirm-gated ("Danger zone" on the
   pool page). Cascades to `pool_members` and `picks` via the existing FKs;
   gated by the `pools_delete` RLS policy.
+- **Soft player target** (`pools.target_size`, optional 1–48): pure messaging
+  ("4 of 10 spots taken" on the join page, roster bar, waiting room). NOT
+  enforced anywhere — the owner can lock early or let the pool exceed it; the
+  only hard cap is 48 (in `join_pool`/`lock_pool`).
+- **Lock emails:** `lockPool` emails every member ("you have N spins") via
+  Resend's batch API (`lib/email.ts`; Clerk has no general-purpose email API,
+  only its own auth emails). Failures are logged, never block the lock, and
+  the whole step no-ops without `RESEND_API_KEY`.
+- **Championship odds** (`lib/odds.ts`): static approximate pre-tournament
+  outright odds (decimal, June 2026) keyed by `teams.name` — no DB column, no
+  API. Displayed as a normalized "chance to win it all" % (implied
+  probability with the overround removed): on the spin reveal, bulk-draft
+  chips, and standings/marquee tooltips. Edit the numbers in that file any
+  time; unknown names just hide the label.
 - **Async draft:** after lock, members spin their allotment anytime; no live turn
   order. Integrity comes from the atomic RPC + `unique (pool_id, team_id)`.
 - **Server-authoritative spin:** the STOP button is cosmetic. `assign_random_team`
@@ -223,8 +245,14 @@ no hardcoded hosts. The manual steps:
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — same as `.env.local`
    - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — **pk_live_…** from step 1
    - `CLERK_SECRET_KEY` — **sk_live_…** from step 1
+   - `RESEND_API_KEY` — from Resend (see below); emails silently skip if unset
+   - `EMAIL_FROM` — optional, e.g. `World Cup Roulette <pools@worldcuproulette.com>`
    (`SUPABASE_SERVICE_ROLE_KEY` is NOT needed — it's only for the local
    concurrency script.)
+   **Resend setup:** create a free account at resend.com → Domains → add
+   `worldcuproulette.com` → add the SPF/DKIM DNS records it shows → once
+   verified, create an API key. Until the domain verifies, lock emails fail
+   (logged server-side) but locking is unaffected.
 5. **Vercel — domains:** add `worldcuproulette.com` (+ `www`, redirecting to
    the apex) and point the registrar's DNS at Vercel per its instructions.
 6. **Heads-up — user IDs reset:** Clerk production is a separate instance,

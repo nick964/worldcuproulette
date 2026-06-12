@@ -28,6 +28,35 @@ export async function getUserMap(
   return map;
 }
 
+// Resolve Clerk user ids to name + primary email, for notifications.
+export async function getUserEmails(
+  userIds: string[],
+): Promise<Map<string, { name: string; email: string | null }>> {
+  const ids = [...new Set(userIds)].filter(Boolean);
+  const map = new Map<string, { name: string; email: string | null }>();
+  if (ids.length === 0) return map;
+
+  const client = await clerkClient();
+  const { data } = await client.users.getUserList({
+    userId: ids,
+    limit: ids.length,
+  });
+
+  for (const u of data) {
+    const name =
+      [u.firstName, u.lastName].filter(Boolean).join(" ") ||
+      u.username ||
+      "player";
+    const email =
+      u.emailAddresses.find((e) => e.id === u.primaryEmailAddressId)
+        ?.emailAddress ??
+      u.emailAddresses[0]?.emailAddress ??
+      null;
+    map.set(u.id, { name, email });
+  }
+  return map;
+}
+
 export function displayName(
   map: Map<string, DisplayUser>,
   userId: string,

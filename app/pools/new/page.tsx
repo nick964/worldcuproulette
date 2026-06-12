@@ -49,6 +49,27 @@ export default function NewPoolPage() {
             <div className="space-y-2">
               <label
                 className="block px-1 text-xs font-semibold uppercase tracking-widest text-on-surface-variant"
+                htmlFor="pool-target"
+              >
+                Planned squad size <span className="text-outline">(optional)</span>
+              </label>
+              <input
+                id="pool-target"
+                name="target_size"
+                type="number"
+                min={1}
+                max={48}
+                placeholder="e.g. 10"
+                className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest p-4 outline-none transition-colors placeholder:text-outline/60 focus:border-primary"
+              />
+              <p className="px-1 text-[10px] uppercase tracking-widest text-on-surface-variant">
+                Just a target — shows joiners &quot;4 of 10 spots taken&quot;.
+                You can lock earlier or let it grow.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label
+                className="block px-1 text-xs font-semibold uppercase tracking-widest text-on-surface-variant"
                 htmlFor="pool-notes"
               >
                 Notes <span className="text-outline">(optional)</span>
