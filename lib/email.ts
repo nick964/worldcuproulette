@@ -115,16 +115,22 @@ export async function sendPoolLockedEmails({
     <h1 style="color:#ffffff;font-size:24px;margin:12px 0">🔒 ${safePool} just locked!</h1>
     <p style="font-size:15px;line-height:1.6;margin:0 0 4px">
       Hey ${escapeHtml(m.name)} — the squad is set and the draft is live.
-      You have <strong style="color:#ffe16d">${m.spins} spin${m.spins === 1 ? "" : "s"}</strong>
-      to draw your World Cup nations.
+      ${
+        m.spins > 0
+          ? `You have <strong style="color:#ffe16d">${m.spins} more spin${m.spins === 1 ? "" : "s"}</strong> to finish drawing your World Cup nations.`
+          : `Your first spin already covered your full allotment — you're all drafted. Watch the standings!`
+      }
     </p>
-    <a href="${poolUrl}" style="display:inline-block;background:#82db6f;color:#003a00;font-weight:bold;padding:14px 28px;border-radius:10px;text-decoration:none;margin:16px 0">SPIN NOW 🎡</a>
+    <a href="${poolUrl}" style="display:inline-block;background:#82db6f;color:#003a00;font-weight:bold;padding:14px 28px;border-radius:10px;text-decoration:none;margin:16px 0">${m.spins > 0 ? "SPIN NOW 🎡" : "VIEW STANDINGS 🏆"}</a>
     <p style="color:#899483;font-size:12px;margin:0">
       Hold the team that lifts the trophy and you win the pool. Good luck!
     </p>
   </div>
 </div>`,
-      text: `${poolName} just locked! You have ${m.spins} spin${m.spins === 1 ? "" : "s"} to draw your World Cup nations. Spin now: ${poolUrl}`,
+      text:
+        m.spins > 0
+          ? `${poolName} just locked! You have ${m.spins} more spin${m.spins === 1 ? "" : "s"} to draw your World Cup nations. Spin now: ${poolUrl}`
+          : `${poolName} just locked! Your first spin already covered your full allotment — you're all drafted. Standings: ${poolUrl}`,
     }));
 
   if (batch.length === 0) return;

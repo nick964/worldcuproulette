@@ -133,7 +133,7 @@ export default async function JoinPage({
           <div className="mt-8 space-y-4">
             <SignUpButton mode="modal" forceRedirectUrl={returnUrl}>
               <button className="pitch-glow w-full rounded-xl bg-primary py-4 font-display text-lg font-bold uppercase tracking-wider text-on-primary transition-transform active:scale-95">
-                Create account &amp; join
+                Create account &amp; take your first spin
               </button>
             </SignUpButton>
             <p className="text-xs text-on-surface-variant">

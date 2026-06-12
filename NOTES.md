@@ -44,7 +44,10 @@ atomically**. Whoever holds the World Cup winner wins the pool.
    9. `supabase/migrations/20260612010000_admin_tools.sql` — owner moderation
       RPCs: `kick_member` (open pools) + `auto_draft_member` (locked pools).
       The kick/auto-draft buttons error until applied.
-   10. `supabase/seed.sql`  (asserts exactly 48 teams)
+   10. `supabase/migrations/20260612020000_early_spin.sql` — guaranteed early
+       first spin in open pools (rewrites `assign_random_team`/`kick_member`/
+       `lock_pool`, adds `leave_pool`). Required: leaving uses the new RPC.
+   11. `supabase/seed.sql`  (asserts exactly 48 teams)
    (Or `supabase db push` + `supabase db seed` if you wire up the CLI.)
 2. **Clerk ↔ Supabase native integration** — already configured during setup:
    - Clerk dashboard: Supabase integration enabled.
@@ -116,6 +119,14 @@ atomically**. Whoever holds the World Cup winner wins the pool.
   time; unknown names just hide the label.
 - **Async draft:** after lock, members spin their allotment anytime; no live turn
   order. Integrity comes from the atomic RPC + `unique (pool_id, team_id)`.
+- **Early first spin:** while a pool is open, every member may draw exactly ONE
+  team immediately (entitlement enforced in `assign_random_team`, which also
+  takes a `FOR UPDATE` lock on the member row to serialize concurrent spins).
+  Safe because the 48-member cap guarantees `floor(48/M) >= 1`, and fair
+  because uniform random draws make champion-holding odds `allotment/48`
+  regardless of spin order. Early picks count against the lock-time allotment
+  (the lock email says "N MORE spins"); leaving/kicking before lock releases
+  the pick back into the pot (`leave_pool`/`kick_member` delete picks).
 - **Server-authoritative spin:** the STOP button is cosmetic. `assign_random_team`
   picks the team server-side and the wheel animates to it.
 - Removed the throwaway `favorite_teams` table + `/favorites` page from the

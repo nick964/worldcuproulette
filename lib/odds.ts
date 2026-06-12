@@ -84,3 +84,31 @@ export function winChanceLabel(teamName: string): string | null {
   if (pct < 0.05) return "<0.1%";
   return `${pct.toFixed(1)}%`;
 }
+
+// Favorite ranking among the 48 (1 = shortest odds; ties share a rank).
+export function favoriteRank(teamName: string): number | null {
+  const odds = ODDS[teamName];
+  if (!odds) return null;
+  let rank = 1;
+  for (const o of Object.values(ODDS)) if (o < odds) rank++;
+  return rank;
+}
+
+// American-style odds ("+650") — familiar sportsbook framing.
+export function americanOdds(teamName: string): string | null {
+  const odds = ODDS[teamName];
+  if (!odds) return null;
+  return odds >= 2
+    ? `+${Math.round((odds - 1) * 100)}`
+    : `${Math.round(-100 / (odds - 1))}`;
+}
+
+// "3rd" from 3, etc.
+export function ordinal(n: number): string {
+  const rem10 = n % 10;
+  const rem100 = n % 100;
+  if (rem10 === 1 && rem100 !== 11) return `${n}st`;
+  if (rem10 === 2 && rem100 !== 12) return `${n}nd`;
+  if (rem10 === 3 && rem100 !== 13) return `${n}rd`;
+  return `${n}th`;
+}

@@ -11,7 +11,7 @@ import {
   teamScore,
   type Scoreboard,
 } from "@/lib/scores";
-import { winChanceLabel } from "@/lib/odds";
+import { winChanceLabel, favoriteRank } from "@/lib/odds";
 import { Wheel } from "@/components/wheel";
 import { InviteLink } from "@/components/invite-link";
 import { DeletePoolButton } from "@/components/delete-pool";
@@ -83,6 +83,10 @@ export default async function PoolPage({
   const isMember = Boolean(myMembership);
   const myUsed = userId ? (picksByUser.get(userId)?.length ?? 0) : 0;
   const mySpinsLeft = (myMembership?.teams_allotted ?? 0) - myUsed;
+  // While the pool is open, every member gets one guaranteed early spin.
+  const myPicks = userId ? (picksByUser.get(userId) ?? []) : [];
+  const earlySpinAvailable =
+    pool.status === "open" && isMember && myUsed === 0;
 
   const M = members.length;
   const base = M > 0 ? Math.floor(48 / M) : 0;
@@ -140,6 +144,60 @@ export default async function PoolPage({
         </div>
       )}
 
+      {/* OPEN: the guaranteed early first spin — no waiting around */}
+      {earlySpinAvailable && (
+        <section className="mt-8">
+          <div className="text-center">
+            <h2 className="font-display text-2xl font-semibold uppercase italic">
+              No waiting — take your first spin now 🎡
+            </h2>
+            <p className="mx-auto mt-1 max-w-xl text-sm text-on-surface-variant">
+              Every player draws their first nation the moment they join. The
+              rest of your spins unlock when the pool locks.
+            </p>
+          </div>
+          <div className="mt-4">
+            <Wheel
+              key={`early-${unclaimedTeams.length}`}
+              poolId={pool.id}
+              teams={unclaimedTeams}
+              spinsLeft={1}
+            />
+          </div>
+        </section>
+      )}
+      {pool.status === "open" && isMember && myUsed > 0 && (
+        <div className="gold-glow glass-card mt-8 flex flex-wrap items-center justify-between gap-4 rounded-xl border-secondary-fixed/30 p-5">
+          <div className="flex items-center gap-4">
+            <span className="text-3xl">🎟️</span>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-fixed">
+                Your first nation is in
+              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                {myPicks.map((t) => (
+                  <span
+                    key={t.id}
+                    className="flex items-center gap-2 rounded-full border border-secondary-fixed/40 bg-secondary-fixed/10 px-3 py-1.5 font-display font-semibold uppercase"
+                  >
+                    <img
+                      src={flagUrl(t.code, "w160")}
+                      alt={t.name}
+                      className="h-4 w-auto rounded-sm"
+                    />
+                    {t.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p className="max-w-xs text-xs text-on-surface-variant">
+            We&apos;ll email you when the pool locks — any remaining spins
+            unlock then.
+          </p>
+        </div>
+      )}
+
       {/* OPEN: waiting room for non-owner members */}
       {pool.status === "open" && isMember && !isOwner && (
         <WaitingRoom
@@ -184,6 +242,15 @@ export default async function PoolPage({
                   >
                     <Avatar user={u} size="sm" />
                     {displayName(userMap, m.user_id)}
+                    {(picksByUser.get(m.user_id) ?? []).map((t) => (
+                      <img
+                        key={t.id}
+                        src={flagUrl(t.code, "w80")}
+                        alt={t.name}
+                        title={`Already drew ${t.name}`}
+                        className="h-3.5 w-auto rounded-sm"
+                      />
+                    ))}
                     {m.user_id === pool.owner_id && (
                       <span className="text-[9px] font-bold uppercase tracking-widest text-secondary-fixed">
                         Owner
@@ -676,7 +743,7 @@ function PoolBody({
                               key={t.id}
                               title={`Group ${t.wc_group} · ${s.wins}W ${s.draws}D ${s.losses}L${
                                 winChanceLabel(t.name)
-                                  ? ` · ${winChanceLabel(t.name)} to win it all`
+                                  ? ` · #${favoriteRank(t.name)} favorite · ${winChanceLabel(t.name)} to win it all`
                                   : ""
                               }`}
                               className={`flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs ${
@@ -854,18 +921,17 @@ function WaitingRoom({
           <span className="text-2xl">🎡</span>
           <p className="text-sm">
             With <strong>{memberCount}</strong> player
-            {memberCount === 1 ? "" : "s"} so far, you&apos;ll get{" "}
+            {memberCount === 1 ? "" : "s"} so far, you&apos;ll end up with{" "}
             <strong className="font-display text-lg text-secondary-fixed">
-              {spinsLabel} spins
-            </strong>{" "}
-            to draw your nations
+              {spinsLabel} nations
+            </strong>
             {rem !== 0 && (
               <span className="text-on-surface-variant">
                 {" "}
                 ({rem} lucky player{rem === 1 ? "" : "s"} get an extra)
               </span>
-            )}
-            .
+            )}{" "}
+            — the first is yours the moment you spin; the rest unlock at lock.
           </p>
         </div>
       </div>

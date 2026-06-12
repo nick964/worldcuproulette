@@ -5,17 +5,34 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { spinForTeam, type SpinResult } from "@/lib/actions";
 import { flagUrl } from "@/lib/flags";
-import { winChanceLabel } from "@/lib/odds";
+import {
+  winChanceLabel,
+  favoriteRank,
+  americanOdds,
+  ordinal,
+} from "@/lib/odds";
 
 type Team = { id: string; name: string; code: string; wc_group: string };
 
-const SPIN_VELOCITY = 32; // px per frame while free-spinning (~1920 px/s @60fps)
+// ── Feel knobs ──────────────────────────────────────────────────────────────
+// SPIN_VELOCITY  — reel speed while free-spinning, in px per frame (~60fps).
+//                  Higher = faster blur. NOTE: it also shortens the stop for
+//                  a given distance (see formula below), so if you raise it,
+//                  raise MIN_DECEL_DIST too.
+// MIN_DECEL_DIST — minimum px the reel travels after STOP before landing.
+//                  Stop duration ≈ STOP_EASE_POW × MIN_DECEL_DIST / (SPIN_VELOCITY × 60)
+//                  seconds — currently ≈ 4 × 3600 / 2400 = 6s.
+// STOP_EASE_POW  — ease-out exponent for the landing. Higher = more of the
+//                  time is spent in the slow dramatic crawl at the end.
+const SPIN_VELOCITY = 40;
+const MIN_DECEL_DIST = 3600;
+const STOP_EASE_POW = 4;
+// ────────────────────────────────────────────────────────────────────────────
+
 const SPIN_PPS = SPIN_VELOCITY * 60; // px per second
-// Reel travel after STOP before landing (~5s with the quartic ease: fast at
-// first, then a long dramatic crawl onto the flag). The landing slot is
-// rewritten to the server team while it's still offscreen, so we never need
-// to travel a whole loop to reach it. Impatient? The Skip button stays.
-const MIN_DECEL_DIST = 2400;
+// The landing slot is rewritten to the server team while it's still
+// offscreen, so we never travel a whole loop to reach it. Impatient? The
+// Skip button stays.
 
 type Phase = "idle" | "spinning" | "stopping" | "drawing" | "revealed";
 
@@ -190,11 +207,18 @@ export function Wheel({
     const target = slot * itemW + itemW / 2 - window / 2;
     setOverride({ index: slot, team });
     const dist = target - current;
-    // quartic ease-out; duration sized so the initial velocity matches the
-    // spin speed, which buys a slow, dramatic final approach
-    const durMs = ((4 * dist) / SPIN_PPS) * 1000;
+    // duration sized so the ease-out's initial velocity matches the spin
+    // speed — the reel never visibly jumps speed at STOP
+    const durMs = ((STOP_EASE_POW * dist) / SPIN_PPS) * 1000;
 
-    decelRef.current = { from: current, dist, durMs, start: 0, pow: 4, team };
+    decelRef.current = {
+      from: current,
+      dist,
+      durMs,
+      start: 0,
+      pow: STOP_EASE_POW,
+      team,
+    };
   };
 
   // Skip the landing animation and reveal the team immediately.
@@ -437,11 +461,15 @@ export function Wheel({
                 Group {result.wc_group}
                 {winChanceLabel(result.name) && (
                   <>
-                    {" · "}roughly{" "}
+                    {" · "}
+                    <span className="font-bold text-secondary-fixed">
+                      {ordinal(favoriteRank(result.name)!)} favorite
+                    </span>{" "}
+                    ({americanOdds(result.name)}) · roughly{" "}
                     <span className="font-bold text-secondary-fixed">
                       {winChanceLabel(result.name)}
                     </span>{" "}
-                    chance of winning, based on odds
+                    chance to win it all
                   </>
                 )}
               </span>

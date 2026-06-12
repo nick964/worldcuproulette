@@ -119,16 +119,14 @@ export async function joinPool(code: string) {
 }
 
 export async function leavePool(formData: FormData) {
-  const userId = await requireUser();
+  await requireUser();
   const poolId = String(formData.get("poolId") ?? "");
   if (!poolId) throw new Error("Missing pool.");
 
+  // RPC rather than a direct delete: it also releases any early pick back
+  // into the pot, atomically.
   const supabase = createClient();
-  const { error } = await supabase
-    .from("pool_members")
-    .delete()
-    .eq("pool_id", poolId)
-    .eq("user_id", userId);
+  const { error } = await supabase.rpc("leave_pool", { p_pool_id: poolId });
   if (error) throw new Error(error.message);
 
   revalidatePath(`/pools/${poolId}`);
@@ -222,17 +220,24 @@ export async function lockPool(formData: FormData) {
   const { error } = await supabase.rpc("lock_pool", { p_pool_id: poolId });
   if (error) throw new Error(error.message);
 
-  // The draft is open — email every member their spin count. Email problems
+  // The draft is open — email every member their REMAINING spin count
+  // (early first spins already count against the allotment). Email problems
   // are logged but never block the lock.
   try {
-    const [{ data: pool }, { data: members }] = await Promise.all([
-      supabase.from("pools").select("name").eq("id", poolId).single(),
-      supabase
-        .from("pool_members")
-        .select("user_id, teams_allotted")
-        .eq("pool_id", poolId),
-    ]);
+    const [{ data: pool }, { data: members }, { data: picks }] =
+      await Promise.all([
+        supabase.from("pools").select("name").eq("id", poolId).single(),
+        supabase
+          .from("pool_members")
+          .select("user_id, teams_allotted")
+          .eq("pool_id", poolId),
+        supabase.from("picks").select("user_id").eq("pool_id", poolId),
+      ]);
     if (pool && members?.length) {
+      const usedByUser = new Map<string, number>();
+      for (const p of picks ?? []) {
+        usedByUser.set(p.user_id, (usedByUser.get(p.user_id) ?? 0) + 1);
+      }
       const emailMap = await getUserEmails(members.map((m) => m.user_id));
       const origin =
         (await headers()).get("origin") ?? "https://worldcuproulette.com";
@@ -241,8 +246,12 @@ export async function lockPool(formData: FormData) {
         poolUrl: `${origin}/pools/${poolId}`,
         members: members.flatMap((m) => {
           const u = emailMap.get(m.user_id);
+          const remaining = Math.max(
+            0,
+            m.teams_allotted - (usedByUser.get(m.user_id) ?? 0),
+          );
           return u?.email
-            ? [{ email: u.email, name: u.name, spins: m.teams_allotted }]
+            ? [{ email: u.email, name: u.name, spins: remaining }]
             : [];
         }),
       });
