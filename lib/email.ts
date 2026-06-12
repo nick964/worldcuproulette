@@ -11,6 +11,61 @@
 
 type LockEmailMember = { email: string; name: string; spins: number };
 
+// Contact-form submission, forwarded to the site owner with reply-to set to
+// the sender so a normal email reply goes straight back to them.
+export async function sendContactEmail({
+  fromName,
+  fromEmail,
+  message,
+}: {
+  fromName: string;
+  fromEmail: string;
+  message: string;
+}): Promise<boolean> {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) {
+    console.warn("[email] RESEND_API_KEY not set — contact form disabled");
+    return false;
+  }
+  const from =
+    process.env.EMAIL_FROM ?? "World Cup Roulette <pools@worldcuproulette.com>";
+  const to = process.env.CONTACT_EMAIL ?? "nickr964@gmail.com";
+
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: [to],
+        reply_to: [fromEmail],
+        subject: `📨 Contact form: ${fromName || fromEmail}`,
+        html: `
+<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px">
+  <p style="font-size:12px;color:#666;margin:0 0 12px">
+    worldcuproulette.com contact form
+  </p>
+  <p style="margin:0 0 4px"><strong>From:</strong> ${escapeHtml(fromName || "(no name)")} &lt;${escapeHtml(fromEmail)}&gt;</p>
+  <div style="background:#f4f4f4;border-radius:8px;padding:16px;margin-top:12px;white-space:pre-wrap;font-size:14px;line-height:1.6">${escapeHtml(message)}</div>
+  <p style="font-size:12px;color:#666;margin-top:12px">Reply to this email to answer them directly.</p>
+</div>`,
+        text: `From: ${fromName || "(no name)"} <${fromEmail}>\n\n${message}`,
+      }),
+    });
+    if (!res.ok) {
+      console.error("[email] contact send failed:", res.status, await res.text());
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("[email] contact send errored:", e);
+    return false;
+  }
+}
+
 // Sent when the owner removes someone from an open pool.
 export async function sendMemberKickedEmail({
   email,

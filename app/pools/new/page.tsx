@@ -59,12 +59,28 @@ export default function NewPoolPage() {
                 type="number"
                 min={1}
                 max={48}
-                placeholder="e.g. 10"
+                list="even-split-sizes"
+                placeholder="e.g. 12"
                 className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest p-4 outline-none transition-colors placeholder:text-outline/60 focus:border-primary"
               />
+              <datalist id="even-split-sizes">
+                <option value="2" />
+                <option value="3" />
+                <option value="4" />
+                <option value="6" />
+                <option value="8" />
+                <option value="12" />
+                <option value="16" />
+                <option value="24" />
+                <option value="48" />
+              </datalist>
               <p className="px-1 text-[10px] uppercase tracking-widest text-on-surface-variant">
-                Just a target — shows joiners &quot;4 of 10 spots taken&quot;.
+                Just a target — shows joiners &quot;4 of 12 spots taken&quot;.
                 You can lock earlier or let it grow.
+              </p>
+              <p className="px-1 text-[10px] uppercase tracking-widest text-secondary-fixed">
+                💡 Pick 2, 3, 4, 6, 8, 12, 16, 24 or 48 players and the 48
+                teams split evenly — everyone gets the same number of spins.
               </p>
             </div>
             <div className="space-y-2">

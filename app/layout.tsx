@@ -104,6 +104,22 @@ export default function RootLayout({
               <span className="font-display text-lg font-bold uppercase italic tracking-tighter text-on-surface">
                 World Cup Roulette
               </span>
+              <div className="flex items-center gap-5 text-xs uppercase tracking-widest">
+                <Link
+                  href="/contact"
+                  className="text-on-surface-variant transition-colors hover:text-primary"
+                >
+                  ✉️ Contact
+                </Link>
+                <a
+                  href="https://x.com/nicky_robby"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-on-surface-variant transition-colors hover:text-primary"
+                >
+                  𝕏 @nicky_robby
+                </a>
+              </div>
               <p className="text-xs uppercase tracking-widest text-on-surface-variant">
                 Spin · Draft · Lift the Cup — World Cup 2026
               </p>

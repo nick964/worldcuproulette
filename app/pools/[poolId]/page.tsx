@@ -10,6 +10,7 @@ import {
   setWinningTeam,
   updatePoolName,
   updatePoolNotes,
+  updatePoolTargetSize,
 } from "@/lib/actions";
 import { flagUrl } from "@/lib/flags";
 import {
@@ -381,6 +382,50 @@ export default async function PoolPage({
                   or let it grow.
                 </p>
               )}
+              <details className="mt-2">
+                <summary className="cursor-pointer list-none text-[10px] font-bold uppercase tracking-widest text-on-surface-variant transition-colors hover:text-primary">
+                  ✏️ {pool.target_size ? "Adjust" : "Set a"} target size
+                </summary>
+                <form
+                  action={updatePoolTargetSize}
+                  className="mt-2 space-y-2"
+                >
+                  <input type="hidden" name="poolId" value={pool.id} />
+                  <div className="flex gap-2">
+                    <input
+                      name="target_size"
+                      type="number"
+                      min={1}
+                      max={48}
+                      list="even-split-sizes"
+                      defaultValue={pool.target_size ?? ""}
+                      placeholder="e.g. 12"
+                      className="w-full min-w-0 flex-1 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+                    />
+                    <datalist id="even-split-sizes">
+                      <option value="2" />
+                      <option value="3" />
+                      <option value="4" />
+                      <option value="6" />
+                      <option value="8" />
+                      <option value="12" />
+                      <option value="16" />
+                      <option value="24" />
+                      <option value="48" />
+                    </datalist>
+                    <SubmitButton
+                      pendingLabel="Saving…"
+                      className="shrink-0 rounded-lg bg-primary px-4 py-2 text-xs font-bold uppercase tracking-widest text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      Save
+                    </SubmitButton>
+                  </div>
+                  <p className="text-[10px] uppercase tracking-widest text-on-surface-variant">
+                    💡 2, 3, 4, 6, 8, 12, 16, 24 or 48 players split the 48
+                    teams evenly. Leave blank to remove the target.
+                  </p>
+                </form>
+              </details>
               <p className="mt-2 text-xs text-on-surface-variant">
                 Locking emails every member that the draft is open.
               </p>

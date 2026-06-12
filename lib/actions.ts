@@ -6,7 +6,11 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { getUserEmails } from "@/lib/clerk";
-import { sendPoolLockedEmails, sendMemberKickedEmail } from "@/lib/email";
+import {
+  sendPoolLockedEmails,
+  sendMemberKickedEmail,
+  sendContactEmail,
+} from "@/lib/email";
 import { containsProfanity } from "@/lib/profanity";
 
 async function requireUser(): Promise<string> {
@@ -159,6 +163,34 @@ export async function updatePoolName(formData: FormData) {
 
   revalidatePath(`/pools/${poolId}`);
   revalidatePath("/pools"); // dashboard list shows the name too
+}
+
+// Owner adjusts (or clears) the soft player target after creation. Display
+// only, never enforced — same RLS gate as the other pool edits.
+export async function updatePoolTargetSize(formData: FormData) {
+  const userId = await requireUser();
+  const poolId = String(formData.get("poolId") ?? "");
+  if (!poolId) throw new Error("Missing pool.");
+  const targetRaw = String(formData.get("target_size") ?? "").trim();
+  let target_size: number | null = null;
+  if (targetRaw) {
+    const n = parseInt(targetRaw, 10);
+    if (Number.isFinite(n)) target_size = Math.min(48, Math.max(1, n));
+  }
+
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("pools")
+    .update({ target_size })
+    .eq("id", poolId)
+    .eq("owner_id", userId)
+    .select("id");
+  if (error) throw new Error(error.message);
+  if (!data?.length) {
+    throw new Error("Only the pool owner can change the target size.");
+  }
+
+  revalidatePath(`/pools/${poolId}`);
 }
 
 // Owner edits the pool notes (entry fee, house rules, …) after creation.
@@ -347,6 +379,37 @@ export async function spinForTeam(poolId: string): Promise<SpinResult> {
     code: team.code,
     wc_group: team.wc_group,
   };
+}
+
+// Public contact form → email to the site owner. No auth required (invitees
+// with problems may not have accounts); a honeypot field plus length caps
+// keep the worst of the bots out.
+export async function sendContactMessage(formData: FormData) {
+  // Bots fill every field — humans never see this one.
+  if (String(formData.get("website") ?? "") !== "") {
+    redirect("/contact?sent=1");
+  }
+
+  const name = String(formData.get("name") ?? "").trim().slice(0, 80);
+  const email = String(formData.get("email") ?? "").trim().slice(0, 120);
+  const message = String(formData.get("message") ?? "").trim().slice(0, 2000);
+  if (!email || !email.includes("@")) {
+    throw new Error("A valid email is required so we can reply.");
+  }
+  if (!message) throw new Error("Message is required.");
+
+  const ok = await sendContactEmail({
+    fromName: name,
+    fromEmail: email,
+    message,
+  });
+  if (!ok) {
+    throw new Error(
+      "Couldn't send your message right now — please email nickr964@gmail.com directly.",
+    );
+  }
+
+  redirect("/contact?sent=1");
 }
 
 export async function setWinningTeam(formData: FormData) {

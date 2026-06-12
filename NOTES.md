@@ -69,6 +69,8 @@ atomically**. Whoever holds the World Cup winner wins the pool.
 - `EMAIL_FROM` — optional sender override; defaults to
   `World Cup Roulette <pools@worldcuproulette.com>` (the domain must be
   verified in Resend for sends to succeed).
+- `CONTACT_EMAIL` — optional destination for the `/contact` form; defaults to
+  `nickr964@gmail.com`.
 
 ---
 
