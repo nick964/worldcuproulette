@@ -1,14 +1,24 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
+import { SignInButton, SignUpButton } from "@clerk/nextjs";
 import { createClient } from "@/utils/supabase/server";
 import { joinPool } from "@/lib/actions";
 import { SubmitButton } from "@/components/submit-button";
 
+// Public page: invitees usually have no account yet. Signed-out visitors see
+// the pool preview with a create-account CTA; after the Clerk modal they land
+// back here with ?welcome=1 and are joined automatically.
 export default async function JoinPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ code: string }>;
+  searchParams: Promise<{ welcome?: string }>;
 }) {
   const { code } = await params;
+  const { welcome } = await searchParams;
+  const { userId } = await auth();
   const supabase = createClient();
 
   const { data: previews } = await supabase.rpc("pool_preview", {
@@ -45,7 +55,18 @@ export default async function JoinPage({
   }
 
   const open = preview.status === "open";
+
+  // Fresh from the sign-up/sign-in modal: finish the join without another
+  // click. join_pool is idempotent, so a re-visit just redirects again.
+  if (userId && welcome && open) {
+    const { data: joinedPoolId } = await supabase.rpc("join_pool", {
+      p_code: code,
+    });
+    if (joinedPoolId) redirect(`/pools/${joinedPoolId}`);
+  }
+
   const joinThisPool = joinPool.bind(null, code);
+  const returnUrl = `/join/${code}?welcome=1`;
 
   return (
     <div className="mx-auto max-w-md px-6 py-20">
@@ -74,16 +95,7 @@ export default async function JoinPage({
           </div>
         )}
 
-        {open ? (
-          <form action={joinThisPool} className="mt-8">
-            <SubmitButton
-              pendingLabel="Joining…"
-              className="pitch-glow w-full rounded-xl bg-primary py-4 font-display text-lg font-bold uppercase tracking-wider text-on-primary transition-transform active:scale-95 disabled:opacity-60"
-            >
-              Join pool
-            </SubmitButton>
-          </form>
-        ) : (
+        {!open ? (
           <div className="mt-8">
             <p className="text-sm text-secondary-fixed">
               This pool has already started — new players can&apos;t join.
@@ -94,6 +106,34 @@ export default async function JoinPage({
             >
               ← Back home
             </Link>
+          </div>
+        ) : userId ? (
+          <form action={joinThisPool} className="mt-8">
+            <SubmitButton
+              pendingLabel="Joining…"
+              className="pitch-glow w-full rounded-xl bg-primary py-4 font-display text-lg font-bold uppercase tracking-wider text-on-primary transition-transform active:scale-95 disabled:opacity-60"
+            >
+              Join pool
+            </SubmitButton>
+          </form>
+        ) : (
+          <div className="mt-8 space-y-4">
+            <SignUpButton mode="modal" forceRedirectUrl={returnUrl}>
+              <button className="pitch-glow w-full rounded-xl bg-primary py-4 font-display text-lg font-bold uppercase tracking-wider text-on-primary transition-transform active:scale-95">
+                Create account &amp; join
+              </button>
+            </SignUpButton>
+            <p className="text-xs text-on-surface-variant">
+              Free to play — takes about 30 seconds.
+            </p>
+            <p className="text-sm text-on-surface-variant">
+              Already have an account?{" "}
+              <SignInButton mode="modal" forceRedirectUrl={returnUrl}>
+                <button className="font-bold text-primary hover:underline">
+                  Sign in
+                </button>
+              </SignInButton>
+            </p>
           </div>
         )}
       </div>

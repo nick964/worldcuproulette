@@ -1,10 +1,11 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 
-// Routes that require authentication. The marketing home page ("/") stays
-// public; everything that touches a user's pools/draft requires sign-in.
+// Routes that require authentication. The marketing home page ("/") and
+// invite pages ("/join/[code]") stay public — invitees usually don't have an
+// account yet; the join page handles sign-up itself. Everything that touches
+// a user's pools/draft requires sign-in.
 const isProtectedRoute = createRouteMatcher([
   '/pools(.*)',
-  '/join(.*)',
 ])
 
 export default clerkMiddleware(async (auth, request) => {

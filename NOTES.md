@@ -35,7 +35,10 @@ atomically**. Whoever holds the World Cup winner wins the pool.
       errors/404s on pool pages until this is applied).
    6. `supabase/migrations/20260611020000_pool_delete.sql` — owner delete-pool
       RLS policy (the Delete pool button no-ops with an error until applied).
-   7. `supabase/seed.sql`  (asserts exactly 48 teams)
+   7. `supabase/migrations/20260611030000_public_preview.sql` — lets
+      signed-out invitees preview a pool (`/join/[code]` is public; without
+      this grant they see "Invalid invite").
+   8. `supabase/seed.sql`  (asserts exactly 48 teams)
    (Or `supabase db push` + `supabase db seed` if you wire up the CLI.)
 2. **Clerk ↔ Supabase native integration** — already configured during setup:
    - Clerk dashboard: Supabase integration enabled.
@@ -61,6 +64,11 @@ atomically**. Whoever holds the World Cup winner wins the pool.
 - **Joining is invite-only:** you join a pool via its invite link (`/join/[code]`),
   which adds you as a member. You can only join while the pool is `open`; once
   locked, membership is frozen. There is no public list of pools to browse.
+- **The invite page is public and sign-up-first:** invitees usually have no
+  account, so `/join/[code]` is not auth-gated (`pool_preview` is granted to
+  `anon`). Signed-out visitors see the pool preview with a "Create account &
+  join" Clerk modal; after auth they return to `/join/[code]?welcome=1`,
+  which auto-joins (idempotent `join_pool`) and redirects into the pool.
 - **No `profiles` table.** Display names/avatars are fetched from Clerk on the
   server via `clerkClient` when rendering member lists. Avoids webhook infra.
 - **Allotment at lock:** `base = floor(48/M)`, and `48 mod M` randomly chosen
@@ -185,6 +193,47 @@ recursion. Invite preview/join go through `SECURITY DEFINER` functions
   (matches played / 104). Graceful states: "no results yet" before the first
   final whistle and "results temporarily unavailable" if the fetch fails
   (everything renders with zeros).
+
+## Production deployment (worldcuproulette.com on Vercel)
+
+The code is domain-ready: invite links derive from `window.location.origin`,
+SEO/OG metadata uses `https://worldcuproulette.com` (`app/layout.tsx`,
+`app/robots.ts`, `app/sitemap.ts`, `app/opengraph-image.tsx`), and there are
+no hardcoded hosts. The manual steps:
+
+1. **Clerk — create a production instance** (dashboard → top instance
+   switcher → "Create production instance", cloning the dev one):
+   - Set the home URL to `https://worldcuproulette.com`.
+   - Add the DNS records Clerk asks for at your registrar (CNAMEs for
+     `clerk.`, `accounts.`, and the email DKIM records), wait for them to
+     verify, then deploy certificates.
+   - Copy the **production** keys (`pk_live_…`, `sk_live_…`) for Vercel.
+   - Dev keys keep working locally; never ship `pk_test/sk_test` to prod
+     (Clerk shows a dev banner and caps usage).
+2. **Supabase — trust the production Clerk instance:** dashboard →
+   Authentication → Sign In / Up → Third-Party Auth → add Clerk again with
+   the **production** domain (`clerk.worldcuproulette.com`). Keep the dev
+   domain entry so local dev still works. Without this, every RLS-gated
+   query in prod returns nothing (JWTs won't verify).
+3. **Supabase — migrations:** all five migrations + seed must be applied
+   (they already are on the current project; nothing new needed).
+4. **Vercel — import the GitHub repo** (framework auto-detects Next.js) and
+   set env vars (Production):
+   - `NEXT_PUBLIC_SUPABASE_URL` — same as `.env.local`
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — same as `.env.local`
+   - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — **pk_live_…** from step 1
+   - `CLERK_SECRET_KEY` — **sk_live_…** from step 1
+   (`SUPABASE_SERVICE_ROLE_KEY` is NOT needed — it's only for the local
+   concurrency script.)
+5. **Vercel — domains:** add `worldcuproulette.com` (+ `www`, redirecting to
+   the apex) and point the registrar's DNS at Vercel per its instructions.
+6. **Heads-up — user IDs reset:** Clerk production is a separate instance,
+   so prod users get new `user_…` ids. Pools created by dev-instance users
+   (e.g. the test pools) won't belong to anyone in prod; clear old rows in
+   the Supabase table editor if you want a clean slate
+   (`delete from pools;` cascades to members/picks).
+7. **Post-deploy smoke test:** sign up on the prod domain, create a pool,
+   open the invite link in a private window, lock, spin once.
 
 ## Things you might want to do next (not required by the spec)
 - Supabase Realtime on `picks` for live standings updates (left as a nice-to-have).
