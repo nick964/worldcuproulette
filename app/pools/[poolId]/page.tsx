@@ -4,7 +4,13 @@ import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@/utils/supabase/server";
 import { getUserMap, displayName, type DisplayUser } from "@/lib/clerk";
-import { leavePool, lockPool, setWinningTeam } from "@/lib/actions";
+import {
+  leavePool,
+  lockPool,
+  setWinningTeam,
+  updatePoolName,
+  updatePoolNotes,
+} from "@/lib/actions";
 import { flagUrl } from "@/lib/flags";
 import {
   getScoreboard,
@@ -122,6 +128,32 @@ export default async function PoolPage({
                 : `${M} player${M === 1 ? "" : "s"}`}
             </span>
           </div>
+          {isOwner && (
+            <details className="mt-2">
+              <summary className="cursor-pointer list-none text-[10px] font-bold uppercase tracking-widest text-on-surface-variant transition-colors hover:text-primary">
+                ✏️ Rename pool
+              </summary>
+              <form
+                action={updatePoolName}
+                className="mt-2 flex max-w-md gap-2"
+              >
+                <input type="hidden" name="poolId" value={pool.id} />
+                <input
+                  name="name"
+                  required
+                  maxLength={80}
+                  defaultValue={pool.name}
+                  className="w-full min-w-0 flex-1 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+                />
+                <SubmitButton
+                  pendingLabel="Saving…"
+                  className="shrink-0 rounded-lg bg-primary px-4 py-2 text-xs font-bold uppercase tracking-widest text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  Save
+                </SubmitButton>
+              </form>
+            </details>
+          )}
         </div>
         {pool.status === "open" && (
           <div className="w-full md:w-96">
@@ -130,17 +162,55 @@ export default async function PoolPage({
         )}
       </div>
 
-      {pool.notes && (
-        <div className="glass-card mt-5 flex items-start gap-3 rounded-xl border-secondary-fixed/20 p-4">
-          <span aria-hidden>📌</span>
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-fixed">
-              Pool notes
+      {(pool.notes || isOwner) && (
+        <div className="glass-card mt-5 rounded-xl border-secondary-fixed/20 p-4">
+          {pool.notes ? (
+            <div className="flex items-start gap-3">
+              <span aria-hidden>📌</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-fixed">
+                  Pool notes
+                </p>
+                <p className="mt-1 whitespace-pre-line text-sm text-on-surface">
+                  {pool.notes}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-on-surface-variant">
+              📌 No pool notes yet — add the entry fee or house rules so every
+              player sees them here and on the invite page.
             </p>
-            <p className="mt-1 whitespace-pre-line text-sm text-on-surface">
-              {pool.notes}
-            </p>
-          </div>
+          )}
+          {isOwner && (
+            <details className="mt-2">
+              <summary className="cursor-pointer list-none text-[10px] font-bold uppercase tracking-widest text-on-surface-variant transition-colors hover:text-primary">
+                ✏️ {pool.notes ? "Edit notes" : "Add notes"}
+              </summary>
+              <form action={updatePoolNotes} className="mt-3 space-y-2">
+                <input type="hidden" name="poolId" value={pool.id} />
+                <textarea
+                  name="notes"
+                  rows={2}
+                  maxLength={500}
+                  defaultValue={pool.notes ?? ""}
+                  placeholder="e.g. Entry fee: $20 — Venmo the owner before kickoff, winner takes all"
+                  className="w-full resize-y rounded-lg border border-outline-variant bg-surface-container-lowest p-3 text-sm outline-none transition-colors placeholder:text-outline/60 focus:border-primary"
+                />
+                <div className="flex items-center gap-3">
+                  <SubmitButton
+                    pendingLabel="Saving…"
+                    className="rounded-lg bg-secondary-container px-4 py-2 text-xs font-bold uppercase tracking-widest text-on-secondary-container transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    Save notes
+                  </SubmitButton>
+                  <span className="text-[10px] uppercase tracking-widest text-on-surface-variant">
+                    Clear the text to remove the notes
+                  </span>
+                </div>
+              </form>
+            </details>
+          )}
         </div>
       )}
 

@@ -132,6 +132,64 @@ export async function leavePool(formData: FormData) {
   revalidatePath(`/pools/${poolId}`);
 }
 
+// Owner renames the pool after creation. Same RLS gate as the notes editor.
+export async function updatePoolName(formData: FormData) {
+  const userId = await requireUser();
+  const poolId = String(formData.get("poolId") ?? "");
+  if (!poolId) throw new Error("Missing pool.");
+  const name = String(formData.get("name") ?? "").trim().slice(0, 80);
+  if (!name) throw new Error("Pool name is required.");
+  if (containsProfanity(name)) {
+    throw new Error(
+      "Pool names have to stay family-friendly — try different wording.",
+    );
+  }
+
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("pools")
+    .update({ name })
+    .eq("id", poolId)
+    .eq("owner_id", userId)
+    .select("id");
+  if (error) throw new Error(error.message);
+  if (!data?.length) {
+    throw new Error("Only the pool owner can rename the pool.");
+  }
+
+  revalidatePath(`/pools/${poolId}`);
+  revalidatePath("/pools"); // dashboard list shows the name too
+}
+
+// Owner edits the pool notes (entry fee, house rules, …) after creation.
+// Gated by the pools_update RLS policy; the explicit owner_id filter makes
+// the "not yours" case a clear error instead of a silent no-op.
+export async function updatePoolNotes(formData: FormData) {
+  const userId = await requireUser();
+  const poolId = String(formData.get("poolId") ?? "");
+  if (!poolId) throw new Error("Missing pool.");
+  const notes = String(formData.get("notes") ?? "").trim().slice(0, 500);
+  if (containsProfanity(notes)) {
+    throw new Error(
+      "Pool notes have to stay family-friendly — try different wording.",
+    );
+  }
+
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("pools")
+    .update({ notes: notes || null })
+    .eq("id", poolId)
+    .eq("owner_id", userId)
+    .select("id");
+  if (error) throw new Error(error.message);
+  if (!data?.length) {
+    throw new Error("Only the pool owner can edit the notes.");
+  }
+
+  revalidatePath(`/pools/${poolId}`);
+}
+
 // Owner-only, destructive: removes the pool and (via cascade) its members
 // and picks. RLS's pools_delete policy is the real gate; the owner_id filter
 // here just makes the "not yours" case explicit.
